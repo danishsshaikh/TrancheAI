@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
-import { api } from "../api/client";
+import { fetchReconciliation } from "../api/client";
+import { useToken } from "../app/AuthContext";
 import { Money } from "../components/Money";
 import { ErrorState, PageHeader, PageSkeleton } from "./DashboardPage";
 
 export function ReconciliationPage() {
-  const { data = [], isLoading, error } = useQuery({ queryKey: ["reconciliation"], queryFn: api.reconciliation });
+  const token = useToken();
+  const { data = [], isLoading, error } = useQuery({ queryKey: ["reconciliation"], queryFn: () => fetchReconciliation(token) });
   if (isLoading) return <PageSkeleton title="Reconciliation" />;
   if (error) return <ErrorState title="Reconciliation" />;
   return (
@@ -41,4 +43,3 @@ export function ReconciliationPage() {
     </section>
   );
 }
-

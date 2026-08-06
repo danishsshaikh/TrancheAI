@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
 from app.core.enums import ProjectStatus, SanctionStatus, TrancheStatus
 from app.core.money import ZERO, format_inr
-from app.services.domain import FundingRevision, FundingSanction, Project, Tranche
 from app.services.financials import calculate_project_financials
 
 
@@ -23,14 +24,14 @@ class ReconciliationIssue:
 
 
 def reconcile_project(
-    project: Project,
-    sanctions: list[FundingSanction],
-    revisions: list[FundingRevision],
-    tranches: list[Tranche],
+    project: Any,
+    sanctions: Sequence[Any],
+    revisions: Sequence[Any],
+    tranches: Sequence[Any],
 ) -> list[ReconciliationIssue]:
     issues: list[ReconciliationIssue] = []
     summary = calculate_project_financials(sanctions, revisions, tranches)
-    if not any(s.status == SanctionStatus.APPROVED for s in sanctions):
+    if not any(_state(s.status) == SanctionStatus.APPROVED.value for s in sanctions):
         issues.append(_issue(project, "missing_approved_sanction", "high", "Project has no approved funding sanction.", suggested="Approve or import the original sanction."))
     if summary.net_disbursed_amount > summary.total_sanctioned_amount:
         over = summary.net_disbursed_amount - summary.total_sanctioned_amount
@@ -40,7 +41,7 @@ def reconcile_project(
         issues.append(_issue(project, "over_utilized", "high", f"Utilization exceeds net disbursement by {format_inr(over)}.", over, suggested="Correct utilization records or missing disbursements."))
     payment_refs: dict[str, str] = {}
     sequences: dict[int, str] = {}
-    active_tranches = [t for t in tranches if t.status not in {TrancheStatus.CANCELLED, TrancheStatus.REJECTED}]
+    active_tranches = [t for t in tranches if _state(t.status) not in {TrancheStatus.CANCELLED.value, TrancheStatus.REJECTED.value}]
     for tranche in active_tranches:
         if tranche.refund_amount > tranche.disbursed_amount:
             issues.append(_issue(project, "refund_above_disbursed", "high", "Refund exceeds disbursed amount on a tranche.", tranche.refund_amount - tranche.disbursed_amount, "tranche", tranche.id, "Correct refund or disbursement amount."))
@@ -51,7 +52,7 @@ def reconcile_project(
         if tranche.sequence_number in sequences:
             issues.append(_issue(project, "duplicate_tranche_sequence", "high", f"Tranche sequence {tranche.sequence_number} is duplicated.", ZERO, "tranche", tranche.id, "Renumber the duplicated tranche after review."))
         sequences[tranche.sequence_number] = tranche.id
-        if tranche.status in {TrancheStatus.DISBURSED, TrancheStatus.RECONCILED, TrancheStatus.RECONCILIATION_PENDING}:
+        if _state(tranche.status) in {TrancheStatus.DISBURSED.value, TrancheStatus.RECONCILED.value, TrancheStatus.RECONCILIATION_PENDING.value}:
             if not tranche.actual_disbursement_date:
                 issues.append(_issue(project, "missing_disbursement_date", "medium", "Disbursed tranche is missing a payment date.", ZERO, "tranche", tranche.id, "Record the actual disbursement date."))
             if not tranche.payment_reference:
@@ -62,16 +63,16 @@ def reconcile_project(
         if expected != actual:
             missing = ", ".join(str(v) for v in sorted(expected - actual))
             issues.append(_issue(project, "missing_tranche_sequence", "medium", f"Tranche sequence has gaps: {missing}.", suggested="Confirm whether a tranche record is missing."))
-    pending = [t for t in active_tranches if t.status in {TrancheStatus.SUBMITTED, TrancheStatus.UNDER_REVIEW, TrancheStatus.APPROVED, TrancheStatus.SCHEDULED}]
-    if project.project_status == ProjectStatus.COMPLETED and pending:
+    pending = [t for t in active_tranches if _state(t.status) in {TrancheStatus.SUBMITTED.value, TrancheStatus.UNDER_REVIEW.value, TrancheStatus.APPROVED.value, TrancheStatus.SCHEDULED.value}]
+    if _state(project.project_status) == ProjectStatus.COMPLETED.value and pending:
         issues.append(_issue(project, "completed_project_pending_tranche", "medium", "Completed project still has pending tranche activity.", suggested="Close, cancel or reconcile pending tranches."))
-    if project.project_status == ProjectStatus.CANCELLED and active_tranches:
+    if _state(project.project_status) == ProjectStatus.CANCELLED.value and active_tranches:
         issues.append(_issue(project, "cancelled_project_active_transactions", "high", "Cancelled project has active financial transactions.", suggested="Cancel or reconcile related financial records."))
     return issues
 
 
 def _issue(
-    project: Project,
+    project: Any,
     issue_type: str,
     severity: str,
     description: str,
@@ -82,3 +83,7 @@ def _issue(
 ) -> ReconciliationIssue:
     return ReconciliationIssue(issue_type, severity, project.id, description, impact, record_type, record_id, suggested_action=suggested)
 
+
+def _state(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw)

@@ -1,4 +1,5 @@
 import type { ProjectRow } from "../../types/domain";
+import { Link } from "react-router-dom";
 
 export function ProjectTable({ projects, canEdit = false }: { projects: ProjectRow[]; canEdit?: boolean }) {
   if (projects.length === 0) {
@@ -20,7 +21,9 @@ export function ProjectTable({ projects, canEdit = false }: { projects: ProjectR
         <tbody>
           {projects.map((project) => (
             <tr key={project.id} className="hover:bg-surface/70">
-              <td className="border-b border-line px-3 py-2 font-medium">{project.projectCode}</td>
+              <td className="border-b border-line px-3 py-2 font-medium">
+                <Link className="text-accent" to={`/projects/${project.id}`}>{project.projectCode}</Link>
+              </td>
               <td className="border-b border-line px-3 py-2">{project.title}</td>
               <td className="border-b border-line px-3 py-2">{project.school}</td>
               <td className="border-b border-line px-3 py-2">{project.department}</td>
@@ -38,4 +41,3 @@ export function ProjectTable({ projects, canEdit = false }: { projects: ProjectR
     </div>
   );
 }
-

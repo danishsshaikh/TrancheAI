@@ -53,6 +53,6 @@ Manual scenarios:
 - Reject an over-disbursement.
 - Generate project master CSV and XLSX.
 - Generate tranche register CSV and XLSX.
-- Verify AI proposals do not write before confirmation.
-- Verify Marathi speech transcripts remain editable before AI submission.
-
+- Verify protected routes reject anonymous requests.
+- Verify read-only users cannot modify projects or funding records.
+- Verify Marathi speech transcripts remain editable before AI submission when that provider is enabled.

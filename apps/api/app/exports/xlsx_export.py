@@ -3,20 +3,37 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from io import BytesIO
-from zipfile import ZIP_DEFLATED, ZipFile
+from typing import Any
 from xml.sax.saxutils import escape
+from zipfile import ZIP_DEFLATED, ZipFile
 
-from app.exports.rows import PROJECT_MASTER_HEADERS, TRANCHE_REGISTER_HEADERS, ProjectExportRecord, TrancheExportRecord, is_money_column, project_master_row
+from app.exports.rows import (
+    PROJECT_MASTER_HEADERS,
+    TRANCHE_REGISTER_HEADERS,
+    ProjectExportRecord,
+    TrancheExportRecord,
+    project_master_row,
+)
 
 
 def project_master_xlsx(records: list[ProjectExportRecord]) -> bytes:
-    rows = [["TrancheAI Project Master Register"], [f"Generated: {datetime.now(timezone.utc).isoformat()}"], [], PROJECT_MASTER_HEADERS]
+    rows: list[list[object]] = [
+        ["TrancheAI Project Master Register"],
+        [f"Generated: {datetime.now(timezone.utc).isoformat()}"],
+        [],
+        list(PROJECT_MASTER_HEADERS),
+    ]
     rows.extend(project_master_row(record) for record in records)
     return _minimal_xlsx("Project Master", rows, metadata={"Export Type": "project_master", "Record Count": str(len(records))}, freeze_pane="A5")
 
 
 def tranche_register_xlsx(records: list[TrancheExportRecord]) -> bytes:
-    rows: list[list[object]] = [["TrancheAI Tranche Register"], [f"Generated: {datetime.now(timezone.utc).isoformat()}"], [], TRANCHE_REGISTER_HEADERS]
+    rows: list[list[object]] = [
+        ["TrancheAI Tranche Register"],
+        [f"Generated: {datetime.now(timezone.utc).isoformat()}"],
+        [],
+        list(TRANCHE_REGISTER_HEADERS),
+    ]
     serial = 1
     for record in records:
         ordered = sorted(record.tranches, key=lambda t: (t.sequence_number, t.request_date or t.actual_disbursement_date or ""))
@@ -36,7 +53,7 @@ def tranche_register_xlsx(records: list[TrancheExportRecord]) -> bytes:
                     record.principal_investigator if first else "",
                     record.summary.total_sanctioned_amount if first else "",
                     tranche.sequence_number,
-                    tranche.transaction_type.label,
+                    _label(tranche.transaction_type),
                     tranche.purchase_order_number,
                     tranche.purchase_order_received_date,
                     tranche.requested_amount,
@@ -45,7 +62,7 @@ def tranche_register_xlsx(records: list[TrancheExportRecord]) -> bytes:
                     tranche.refund_amount,
                     tranche.utilized_amount,
                     tranche.payment_reference,
-                    tranche.status.label,
+                    _label(tranche.status),
                     tranche.remarks,
                 ]
             )
@@ -55,6 +72,8 @@ def tranche_register_xlsx(records: list[TrancheExportRecord]) -> bytes:
 
 def _minimal_xlsx(sheet_name: str, rows: list[list[object]], metadata: dict[str, str], freeze_pane: str) -> bytes:
     buffer = BytesIO()
+    metadata_rows: list[list[object]] = [["Key", "Value"]]
+    metadata_rows.extend([key, value] for key, value in metadata.items())
     with ZipFile(buffer, "w", ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", _content_types())
         archive.writestr("_rels/.rels", _root_rels())
@@ -62,7 +81,7 @@ def _minimal_xlsx(sheet_name: str, rows: list[list[object]], metadata: dict[str,
         archive.writestr("xl/_rels/workbook.xml.rels", _workbook_rels())
         archive.writestr("xl/styles.xml", _styles_xml())
         archive.writestr("xl/worksheets/sheet1.xml", _sheet_xml(rows, freeze_pane))
-        archive.writestr("xl/worksheets/sheet2.xml", _sheet_xml([["Key", "Value"], *metadata.items()], "A2"))
+        archive.writestr("xl/worksheets/sheet2.xml", _sheet_xml(metadata_rows, "A2"))
     return buffer.getvalue()
 
 
@@ -127,3 +146,8 @@ def _workbook_xml(sheet_name: str) -> str:
 
 def _styles_xml() -> str:
     return """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="2"><numFmt numFmtId="164" formatCode="₹#,##0.00"/><numFmt numFmtId="165" formatCode="yyyy-mm-dd"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Aptos"/></font><font><b/><sz val="11"/><name val="Aptos"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/><xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs></styleSheet>"""
+
+
+def _label(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw).replace("_", " ").title()

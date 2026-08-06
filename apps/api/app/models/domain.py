@@ -3,7 +3,21 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -53,6 +67,28 @@ class ProjectModel(TimestampMixin, Base):
     tranches: Mapped[list[TrancheModel]] = relationship(back_populates="project", cascade="all, delete-orphan")
 
 
+class UserModel(TimestampMixin, Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(512), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+class AuthSessionModel(Base):
+    __tablename__ = "auth_sessions"
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ProjectParticipantModel(TimestampMixin, Base):
     __tablename__ = "project_participants"
 
@@ -74,6 +110,10 @@ class ProjectParticipantModel(TimestampMixin, Base):
 
 class FundingSanctionModel(TimestampMixin, Base):
     __tablename__ = "funding_sanctions"
+    __table_args__ = (
+        CheckConstraint("amount >= 0", name="ck_funding_sanction_amount_non_negative"),
+        Index("uq_one_approved_sanction_per_project", "project_id", unique=True, postgresql_where=text("status = 'approved'")),
+    )
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
@@ -92,7 +132,10 @@ class FundingSanctionModel(TimestampMixin, Base):
 
 class FundingRevisionModel(TimestampMixin, Base):
     __tablename__ = "funding_revisions"
-    __table_args__ = (UniqueConstraint("project_id", "revision_number", name="uq_project_revision_number"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "revision_number", name="uq_project_revision_number"),
+        CheckConstraint("amount >= 0", name="ck_funding_revision_amount_non_negative"),
+    )
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
@@ -112,7 +155,15 @@ class FundingRevisionModel(TimestampMixin, Base):
 
 class TrancheModel(TimestampMixin, Base):
     __tablename__ = "tranches"
-    __table_args__ = (UniqueConstraint("project_id", "sequence_number", name="uq_project_tranche_sequence"),)
+    __table_args__ = (
+        UniqueConstraint("project_id", "sequence_number", name="uq_project_tranche_sequence"),
+        CheckConstraint("requested_amount >= 0", name="ck_tranche_requested_non_negative"),
+        CheckConstraint("approved_amount >= 0", name="ck_tranche_approved_non_negative"),
+        CheckConstraint("disbursed_amount >= 0", name="ck_tranche_disbursed_non_negative"),
+        CheckConstraint("refund_amount >= 0", name="ck_tranche_refund_non_negative"),
+        CheckConstraint("utilized_amount >= 0", name="ck_tranche_utilized_non_negative"),
+        Index("uq_active_payment_reference", "payment_reference", unique=True, postgresql_where=text("payment_reference IS NOT NULL")),
+    )
 
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), nullable=False, index=True)
@@ -153,4 +204,3 @@ class AuditEventModel(Base):
     reason: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     request_id: Mapped[str | None] = mapped_column(String(128))
-

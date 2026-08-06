@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 Money = Decimal
 ZERO = Decimal("0.00")
@@ -26,7 +26,7 @@ def format_inr(value: Money) -> str:
     whole, fraction = f"{value:.2f}".split(".")
     if len(whole) > 3:
         head, tail = whole[:-3], whole[-3:]
-        groups = []
+        groups: list[str] = []
         while len(head) > 2:
             groups.insert(0, head[-2:])
             head = head[:-2]
@@ -34,4 +34,3 @@ def format_inr(value: Money) -> str:
             groups.insert(0, head)
         whole = ",".join(groups + [tail])
     return f"{sign}₹{whole}.{fraction}"
-

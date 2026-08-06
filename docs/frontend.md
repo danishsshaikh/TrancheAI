@@ -11,7 +11,7 @@ Implemented screens:
 - Reconciliation page.
 - AI Assistant preview surface.
 
-The current UI uses a mock adapter in `apps/web/src/api/client.ts` so the interface can be developed before the server is running. Server wiring remains required.
+The current UI uses `apps/web/src/api/client.ts` to call the FastAPI server directly. Authentication state is held in `AuthContext`, and protected pages require a bearer token from `/api/v1/auth/login`.
 
 Design approach:
 
@@ -19,4 +19,3 @@ Design approach:
 - Dense tables for project and reconciliation work.
 - Clear empty, error and loading states planned for API-connected screens.
 - Standard form controls and restrained color.
-

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
 from app.core.enums import RevisionStatus, RevisionType, SanctionStatus, TrancheStatus
 from app.core.money import ZERO
-from app.services.domain import FundingRevision, FundingSanction, Tranche
 
 REQUEST_TOTAL_STATES = {
     TrancheStatus.SUBMITTED,
@@ -55,19 +56,19 @@ class ProjectFinancialSummary:
 
 
 def calculate_project_financials(
-    sanctions: list[FundingSanction],
-    revisions: list[FundingRevision],
-    tranches: list[Tranche],
+    sanctions: Sequence[Any],
+    revisions: Sequence[Any],
+    tranches: Sequence[Any],
 ) -> ProjectFinancialSummary:
-    approved_sanctions = [s for s in sanctions if s.status == SanctionStatus.APPROVED]
-    approved_revisions = [r for r in revisions if r.status == RevisionStatus.APPROVED]
-    valid_requested = [t for t in tranches if t.status in REQUEST_TOTAL_STATES]
-    valid_approved = [t for t in tranches if t.status in APPROVED_TOTAL_STATES]
-    valid_disbursed = [t for t in tranches if t.status in DISBURSED_TOTAL_STATES]
+    approved_sanctions = [s for s in sanctions if _state(s.status) == SanctionStatus.APPROVED.value]
+    approved_revisions = [r for r in revisions if _state(r.status) == RevisionStatus.APPROVED.value]
+    valid_requested = [t for t in tranches if _state(t.status) in _state_set(REQUEST_TOTAL_STATES)]
+    valid_approved = [t for t in tranches if _state(t.status) in _state_set(APPROVED_TOTAL_STATES)]
+    valid_disbursed = [t for t in tranches if _state(t.status) in _state_set(DISBURSED_TOTAL_STATES)]
 
     initial = sum((s.amount for s in approved_sanctions), ZERO)
-    increases = sum((r.amount for r in approved_revisions if r.revision_type == RevisionType.INCREASE), ZERO)
-    reductions = sum((r.amount for r in approved_revisions if r.revision_type == RevisionType.REDUCTION), ZERO)
+    increases = sum((r.amount for r in approved_revisions if _state(r.revision_type) == RevisionType.INCREASE.value), ZERO)
+    reductions = sum((r.amount for r in approved_revisions if _state(r.revision_type) == RevisionType.REDUCTION.value), ZERO)
     total_sanctioned = initial + increases - reductions
     requested = sum((t.requested_amount for t in valid_requested), ZERO)
     approved = sum((t.approved_amount for t in valid_approved), ZERO)
@@ -94,7 +95,7 @@ def calculate_project_financials(
         available_sanctioned_balance=available,
         unutilized_disbursed_balance=unutilized,
         pending_approved_amount=pending,
-        tranche_count=len([t for t in tranches if t.status not in {TrancheStatus.CANCELLED, TrancheStatus.REJECTED}]),
+        tranche_count=len([t for t in tranches if _state(t.status) not in {TrancheStatus.CANCELLED.value, TrancheStatus.REJECTED.value}]),
         latest_disbursement_date=latest,
         reconciliation_status=status,
     )
@@ -120,3 +121,11 @@ def _status(
         return "attention_required"
     return "balanced"
 
+
+def _state(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw)
+
+
+def _state_set(values: set[TrancheStatus]) -> set[str]:
+    return {value.value for value in values}

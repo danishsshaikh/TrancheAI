@@ -8,6 +8,8 @@ from os import getenv
 class Settings:
     app_name: str = "TrancheAI"
     database_url: str = getenv("DATABASE_URL", "postgresql+psycopg://trancheai:change-me@localhost:5433/trancheai")
+    jwt_secret: str = getenv("JWT_SECRET", "change-this-on-server")
+    cors_origins: tuple[str, ...] = tuple(origin.strip() for origin in getenv("CORS_ORIGINS", "http://localhost:3100").split(",") if origin.strip())
     ai_enabled: bool = getenv("AI_ENABLED", "false").lower() == "true"
     ai_base_url: str = getenv("AI_BASE_URL", "http://host.docker.internal:11434/v1")
     ai_model: str = getenv("AI_MODEL", "")
@@ -20,4 +22,3 @@ class Settings:
 
 
 settings = Settings()
-

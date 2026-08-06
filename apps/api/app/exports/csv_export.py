@@ -2,8 +2,16 @@ from __future__ import annotations
 
 import csv
 from io import StringIO
+from typing import Any
 
-from app.exports.rows import PROJECT_MASTER_HEADERS, TRANCHE_REGISTER_HEADERS, ProjectExportRecord, TrancheExportRecord, project_master_row, serialize_csv_value
+from app.exports.rows import (
+    PROJECT_MASTER_HEADERS,
+    TRANCHE_REGISTER_HEADERS,
+    ProjectExportRecord,
+    TrancheExportRecord,
+    project_master_row,
+    serialize_csv_value,
+)
 
 
 def project_master_csv(records: list[ProjectExportRecord]) -> str:
@@ -28,7 +36,7 @@ def tranche_register_csv(records: list[TrancheExportRecord]) -> str:
                     record.principal_investigator if first else "",
                     record.summary.total_sanctioned_amount if first else "",
                     tranche.sequence_number,
-                    tranche.transaction_type.label,
+                    _label(tranche.transaction_type),
                     tranche.purchase_order_number,
                     tranche.purchase_order_received_date,
                     tranche.requested_amount,
@@ -37,7 +45,7 @@ def tranche_register_csv(records: list[TrancheExportRecord]) -> str:
                     tranche.refund_amount,
                     tranche.utilized_amount,
                     tranche.payment_reference,
-                    tranche.status.label,
+                    _label(tranche.status),
                     tranche.remarks,
                 ]
             )
@@ -53,3 +61,7 @@ def _write_csv(headers: list[str], rows: list[list[object]]) -> str:
         writer.writerow([serialize_csv_value(value) for value in row])
     return output.getvalue()
 
+
+def _label(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw).replace("_", " ").title()

@@ -4,27 +4,28 @@ TrancheAI is a standalone open-source fund-disbursement and project-funding mana
 
 ## Status
 
-Partially implemented.
+First working vertical slice implemented locally.
 
 Implemented:
 
-- FastAPI backend structure with SQLAlchemy models and Alembic migration.
+- FastAPI backend with SQLAlchemy models, Alembic migration and DB-backed API routes.
+- Token-based login/logout/current-user endpoints with role checks.
+- Project, sanction, funding-revision and tranche CRUD/workflow endpoints.
 - Canonical Decimal-based financial calculation service.
 - Validation and deterministic reconciliation services.
 - CSV import preview with normalization and row fingerprints.
 - CSV exports and structural XLSX workbook generation.
 - AI proposal boundary with allowlisted actions and confirmation flow.
 - Speech-to-text boundary preserving Marathi transcripts.
-- React/Vite administrative shell with dashboard, projects, tranche form, reconciliation and AI pages.
+- React/Vite administrative shell wired to the API for login, dashboard, projects, tranches, reconciliation and exports.
 - Docker Compose server setup.
-- Local backend service tests that do not require Docker or PostgreSQL.
+- Backend service tests plus PostgreSQL API integration tests.
+- Frontend typecheck, tests and production build.
 
 Server verification required:
 
-- PostgreSQL migrations against a live database.
-- Full API persistence wiring.
-- Frontend build and browser workflows after dependencies are installed.
 - Live AI and STT providers.
+- Manual browser workflow on the deployment server.
 
 ## Stack
 
@@ -44,7 +45,9 @@ Frontend tests require installed npm dependencies:
 ```bash
 cd apps/web
 npm install
+npm run typecheck
 npm test
+npm run build
 ```
 
 ## Server Run
@@ -69,4 +72,3 @@ See [docs/server-runbook.md](docs/server-runbook.md).
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). A final project license has not been chosen; see [docs/licensing-decision.md](docs/licensing-decision.md).
-

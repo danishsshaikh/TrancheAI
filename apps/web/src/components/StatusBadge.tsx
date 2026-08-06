@@ -14,6 +14,5 @@ export function StatusBadge({ value }: { value: string | ReconciliationStatus })
 }
 
 function label(value: string) {
-  return value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return value.replace(/_/g, " ").replace(/\b\w/g, (char: string) => char.toUpperCase());
 }
-

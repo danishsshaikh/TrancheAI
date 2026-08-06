@@ -3,18 +3,18 @@ from __future__ import annotations
 import unittest
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from zipfile import ZipFile
 
-from app.ai.provider import FakeAIProvider
 from app.ai.proposal_service import AIProposalService
+from app.ai.provider import FakeAIProvider
 from app.ai.schemas import AIProposal
 from app.core.enums import Role, SanctionStatus, TrancheStatus
 from app.exports.csv_export import project_master_csv, tranche_register_csv
 from app.exports.rows import ProjectExportRecord, TrancheExportRecord
-from app.exports.xlsx_export import project_master_xlsx, tranche_register_xlsx
+from app.exports.xlsx_export import tranche_register_xlsx
 from app.imports.csv_importer import PROJECT_HEADERS, TRANCHE_HEADERS, preview_csv
 from app.services.audit import AuditRecorder
-from app.services.domain import FundingSanction, Project, Tranche
 from app.services.financials import calculate_project_financials
 from app.services.permissions import Actor
 from app.speech.provider import FakeSTTProvider
@@ -41,11 +41,11 @@ class ImportTests(unittest.TestCase):
 
 class ExportTests(unittest.TestCase):
     def _records(self) -> tuple[list[ProjectExportRecord], list[TrancheExportRecord]]:
-        project = Project(id="p1", project_code="TRAI-SYN-001", title="Synthetic Marathi प्रकल्प", school="School", department="Dept")
-        sanctions = [FundingSanction(project_id="p1", amount="100000", status=SanctionStatus.APPROVED)]
+        project = record(id="p1", project_code="TRAI-SYN-001", title="Synthetic Marathi प्रकल्प", institution=None, school="School", department="Dept", academic_year=None, cohort=None, project_status="active", start_date=None, actual_completion_date=None, expected_completion_date=None, technology_readiness_level=None, prototype_status=None, publication_status=None, patent_status=None, startup_status=None)
+        sanctions = [money_record(project_id="p1", amount="100000", status=SanctionStatus.APPROVED)]
         tranches = [
-            Tranche(project_id="p1", sequence_number=2, requested_amount="25000", approved_amount="25000", disbursed_amount="0", status=TrancheStatus.APPROVED),
-            Tranche(project_id="p1", sequence_number=1, requested_amount="50000", approved_amount="50000", disbursed_amount="50000", status=TrancheStatus.DISBURSED, payment_reference="UTR-1", actual_disbursement_date=date(2026, 8, 1)),
+            money_record(id="t2", project_id="p1", sequence_number=2, requested_amount="25000", approved_amount="25000", disbursed_amount="0", refund_amount="0", utilized_amount="0", status=TrancheStatus.APPROVED, transaction_type="advance", payment_reference=None, actual_disbursement_date=None, request_date=None, purchase_order_number=None, purchase_order_received_date=None, remarks=None),
+            money_record(id="t1", project_id="p1", sequence_number=1, requested_amount="50000", approved_amount="50000", disbursed_amount="50000", refund_amount="0", utilized_amount="0", status=TrancheStatus.DISBURSED, transaction_type="advance", payment_reference="UTR-1", actual_disbursement_date=date(2026, 8, 1), request_date=None, purchase_order_number=None, purchase_order_received_date=None, remarks=None),
         ]
         summary = calculate_project_financials(sanctions, [], tranches)
         return [ProjectExportRecord(project, summary, "Dr Synthetic")], [TrancheExportRecord(project, summary, tranches, "Dr Synthetic")]
@@ -109,3 +109,12 @@ class AIAndSpeechTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+def record(**kwargs):
+    return SimpleNamespace(**kwargs)
+
+
+def money_record(**kwargs):
+    for key in ["amount", "requested_amount", "approved_amount", "disbursed_amount", "refund_amount", "utilized_amount"]:
+        if key in kwargs:
+            kwargs[key] = Decimal(str(kwargs[key])).quantize(Decimal("0.01"))
+    return SimpleNamespace(**kwargs)

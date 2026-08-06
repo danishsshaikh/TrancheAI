@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Any
 
-from app.services.domain import Project, Tranche
 from app.services.financials import ProjectFinancialSummary
 
 PROJECT_MASTER_HEADERS = [
@@ -67,30 +67,30 @@ TRANCHE_REGISTER_HEADERS = [
 
 @dataclass(frozen=True)
 class ProjectExportRecord:
-    project: Project
+    project: Any
     summary: ProjectFinancialSummary
     principal_investigator: str = ""
 
 
 @dataclass(frozen=True)
 class TrancheExportRecord:
-    project: Project
+    project: Any
     summary: ProjectFinancialSummary
-    tranches: list[Tranche]
+    tranches: list[Any]
     principal_investigator: str = ""
 
 
 def project_master_row(record: ProjectExportRecord) -> list[object]:
     p, s = record.project, record.summary
     return [
-        p.project_code,
+        getattr(p, "project_code", getattr(p, "projectCode", "")),
         p.title,
         p.institution,
         p.school,
         p.department,
         p.academic_year,
         p.cohort,
-        p.project_status.label,
+        _label(p.project_status),
         p.start_date,
         p.actual_completion_date or p.expected_completion_date,
         record.principal_investigator,
@@ -128,3 +128,7 @@ def serialize_csv_value(value: object) -> str:
         return f"{value:.2f}"
     return str(value)
 
+
+def _label(value: Any) -> str:
+    raw = getattr(value, "value", value)
+    return str(raw).replace("_", " ").title()

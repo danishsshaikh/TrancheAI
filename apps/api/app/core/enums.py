@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class LabelledEnum(str, Enum):
+class LabelledEnum(StrEnum):
     @property
     def label(self) -> str:
         return self.value.replace("_", " ").title()
@@ -80,4 +80,3 @@ class Role(LabelledEnum):
     FUND_REVIEWER = "fund_reviewer"
     AUDITOR = "auditor"
     VIEWER = "viewer"
-

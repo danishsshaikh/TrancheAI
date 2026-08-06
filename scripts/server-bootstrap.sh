@@ -6,6 +6,6 @@ if [[ -z "${BOOTSTRAP_ADMIN_EMAIL:-}" || -z "${BOOTSTRAP_ADMIN_PASSWORD:-}" ]]; 
   exit 1
 fi
 
-echo "Bootstrap user creation is wired as a server task placeholder."
-echo "Email: ${BOOTSTRAP_ADMIN_EMAIL}"
-
+cd apps/api
+alembic upgrade head
+python -m app.cli

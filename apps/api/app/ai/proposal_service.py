@@ -3,8 +3,7 @@ from __future__ import annotations
 from app.ai.action_validator import validate_ai_proposal
 from app.ai.provider import AIProvider
 from app.ai.schemas import AIProposalPreview
-from app.services.audit import AuditRecorder
-from app.services.domain import AuditEvent
+from app.services.audit import AuditEvent, AuditRecorder
 from app.services.permissions import Actor, require
 
 
@@ -45,4 +44,3 @@ class AIProposalService:
             )
         )
         return {"status": "accepted_for_domain_service", "action": preview.proposal.action}
-
