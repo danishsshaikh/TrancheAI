@@ -15,6 +15,7 @@ export default {
         line: "oklch(85% 0.012 165)",
         primary: "oklch(48% 0.13 170)",
         accent: "oklch(48% 0.13 170)",
+        success: "oklch(48% 0.12 150)",
         warning: "oklch(61% 0.13 75)",
         danger: "oklch(55% 0.16 25)"
       }

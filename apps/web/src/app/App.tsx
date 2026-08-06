@@ -5,7 +5,7 @@ import { ProjectDetailPage } from "../pages/ProjectDetailPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
 import { ReconciliationPage } from "../pages/ReconciliationPage";
 import { TrancheFormPage } from "../pages/TrancheFormPage";
-import { AiAssistantPage } from "../pages/AiAssistantPage";
+import { AIAssistantPage } from "../pages/AiAssistantPage";
 import { ImportsExportsPage } from "../pages/ImportsExportsPage";
 
 export function App() {
@@ -18,7 +18,7 @@ export function App() {
         <Route path="/tranches/new" element={<TrancheFormPage />} />
         <Route path="/reconciliation" element={<ReconciliationPage />} />
         <Route path="/imports-exports" element={<ImportsExportsPage />} />
-        <Route path="/ai" element={<AiAssistantPage />} />
+        <Route path="/ai" element={<AIAssistantPage />} />
       </Routes>
     </Layout>
   );

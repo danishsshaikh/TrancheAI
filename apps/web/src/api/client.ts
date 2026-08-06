@@ -1,4 +1,4 @@
-import type { ProjectRow, ReconciliationIssue } from "../types/domain";
+import type { AIProposalPreview, ProjectRow, ReconciliationIssue } from "../types/domain";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
@@ -13,6 +13,19 @@ export async function fetchReconciliation(): Promise<ReconciliationIssue[]> {
   if (!response.ok) throw new Error("Reconciliation issues could not be loaded.");
   return response.json();
 }
+
+export async function fetchAiPreview(): Promise<AIProposalPreview> {
+  if (import.meta.env.VITE_USE_MOCK_API !== "false") return demoAiPreview;
+  const response = await fetch(`${API_BASE}/api/v1/ai/preview`);
+  if (!response.ok) throw new Error("AI preview could not be loaded.");
+  return response.json();
+}
+
+export const api = {
+  projects: fetchProjects,
+  reconciliation: fetchReconciliation,
+  aiPreview: fetchAiPreview
+};
 
 export const demoProjects: ProjectRow[] = [
   {
@@ -48,3 +61,16 @@ export const demoIssues: ReconciliationIssue[] = [
   }
 ];
 
+export const demoAiPreview: AIProposalPreview = {
+  action: "propose_tranche_creation",
+  target: "SP-001",
+  allowed: true,
+  warnings: ["Review the payment date before confirmation."],
+  errors: [],
+  proposedValues: {
+    trancheSequence: "4",
+    requestedAmount: "50000.00",
+    approvedAmount: "50000.00",
+    status: "draft"
+  }
+};

@@ -31,29 +31,28 @@ export function TrancheFormPage() {
         <Metric label="Net Disbursed" value={project.summary.netDisbursedAmount} />
         <Metric label="Available Balance" value={project.summary.availableSanctionedBalance} />
       </div>
-      <form className="space-y-4 rounded-md border border-line bg-panel p-4">
-        <label className="block text-sm font-medium">
-          Project code
-          <input className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" {...form.register("projectCode")} />
+      <form className="space-y-4 rounded-md border border-line bg-panel p-4" onSubmit={form.handleSubmit(() => undefined)}>
+        <label className="block text-sm font-medium" htmlFor="projectCode">
+          Project Code
+          <input id="projectCode" className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" {...form.register("projectCode")} />
         </label>
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="block text-sm font-medium">
-            Requested amount
-            <input className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" type="number" {...form.register("requestedAmount")} />
+          <label className="block text-sm font-medium" htmlFor="requestedAmount">
+            Requested Amount
+            <input id="requestedAmount" className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" type="number" {...form.register("requestedAmount")} />
           </label>
-          <label className="block text-sm font-medium">
-            Approved amount
-            <input className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" type="number" {...form.register("approvedAmount")} />
+          <label className="block text-sm font-medium" htmlFor="approvedAmount">
+            Approved Amount
+            <input id="approvedAmount" className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" type="number" {...form.register("approvedAmount")} />
             {form.formState.errors.approvedAmount ? <span className="mt-1 block text-sm text-danger">{form.formState.errors.approvedAmount.message}</span> : null}
           </label>
         </div>
-        <label className="block text-sm font-medium">
-          Payment reference
-          <input className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" {...form.register("paymentReference")} />
+        <label className="block text-sm font-medium" htmlFor="paymentReference">
+          Payment Reference
+          <input id="paymentReference" className="focus-ring mt-1 w-full rounded-md border border-line bg-surface px-3 py-2" {...form.register("paymentReference")} />
         </label>
-        <button className="focus-ring rounded-md bg-accent px-4 py-2 text-sm font-medium text-surface" type="button">Submit for review</button>
+        <button className="focus-ring rounded-md bg-accent px-4 py-2 text-sm font-medium text-surface" type="submit">Save Draft</button>
       </form>
     </div>
   );
 }
-

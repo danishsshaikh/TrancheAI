@@ -1,4 +1,5 @@
 import { Bot, ClipboardList, FileDown, Gauge, Landmark, ListChecks, Search, Settings, WalletCards } from "lucide-react";
+import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
 const navItems = [
@@ -11,7 +12,7 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: Settings }
 ];
 
-export function Layout({ children }: { children: React.ReactNode }) {
+export function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-surface text-ink">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-line bg-panel px-3 py-4 md:block">
