@@ -190,6 +190,67 @@ class TrancheModel(TimestampMixin, Base):
     project: Mapped[ProjectModel] = relationship(back_populates="tranches")
 
 
+class ImportBatchModel(TimestampMixin, Base):
+    __tablename__ = "import_batches"
+    __table_args__ = (
+        Index("ix_import_batches_created_by", "created_by"),
+        Index("ix_import_batches_status", "status"),
+        Index("ix_import_batches_file_fingerprint", "file_fingerprint"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    import_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str | None] = mapped_column(String(128))
+    file_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="previewed", nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    valid_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    invalid_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    duplicate_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    existing_match_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    create_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    update_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    committed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_by: Mapped[str | None] = mapped_column(String(128))
+    committed_by: Mapped[str | None] = mapped_column(String(128))
+    committed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    rows: Mapped[list[ImportRowModel]] = relationship(back_populates="batch", cascade="all, delete-orphan")
+
+
+class ImportRowModel(Base):
+    __tablename__ = "import_rows"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "row_number", name="uq_import_row_batch_number"),
+        Index("ix_import_rows_batch_id", "batch_id"),
+        Index("ix_import_rows_row_fingerprint", "row_fingerprint"),
+        Index("ix_import_rows_status", "status"),
+        Index("uq_committed_import_row_fingerprint", "row_fingerprint", unique=True, postgresql_where=text("status = 'committed'")),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"), nullable=False)
+    row_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    row_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
+    raw_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    normalized_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="valid", nullable=False)
+    proposed_action: Mapped[str] = mapped_column(String(32), default="create", nullable=False)
+    duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(64))
+    entity_id: Mapped[str | None] = mapped_column(String(128))
+    existing_entity_id: Mapped[str | None] = mapped_column(String(128))
+    errors: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    warnings: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    batch: Mapped[ImportBatchModel] = relationship(back_populates="rows")
+
+
 class AuditEventModel(Base):
     __tablename__ = "audit_events"
 

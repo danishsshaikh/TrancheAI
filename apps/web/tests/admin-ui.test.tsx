@@ -4,6 +4,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthProvider } from "../src/app/AuthContext";
+import { ImportsExportsPage } from "../src/pages/ImportsExportsPage";
 import { ProjectsPage } from "../src/pages/ProjectsPage";
 import { ReconciliationPage } from "../src/pages/ReconciliationPage";
 import { TrancheFormPage } from "../src/pages/TrancheFormPage";
@@ -17,6 +18,7 @@ const project = {
   academicYear: "2025-26",
   status: "active",
   fundingStatus: "balanced",
+  version: 1,
   summary: {
     totalSanctionedAmount: "500000.00",
     netDisbursedAmount: "100000.00",
@@ -39,6 +41,38 @@ const issue = {
   suggestedAction: "Record the payment reference.",
 };
 
+const importBatch = {
+  id: "batch-1",
+  importType: "projects",
+  filename: "projects.csv",
+  status: "previewed",
+  rowsDetected: 1,
+  validRows: 1,
+  invalidRows: 0,
+  duplicateRows: 0,
+  existingRecordsMatched: 0,
+  proposedCreates: 1,
+  proposedUpdates: 0,
+  committedRows: 0,
+  failedRows: 0,
+  skippedRows: 0,
+  rows: [{
+    id: "row-1",
+    rowNumber: 2,
+    status: "valid",
+    proposedAction: "create",
+    duplicate: false,
+    entityType: "project",
+    entityId: null,
+    existingEntityId: null,
+    errors: [],
+    warnings: [],
+    rawValues: { project_code: "TRAI-UI-001" },
+    normalizedValues: { project_code: "TRAI-UI-001" },
+    result: {},
+  }],
+};
+
 function json(data: unknown, status = 200) {
   return Promise.resolve(new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }));
 }
@@ -55,6 +89,12 @@ beforeEach(() => {
     }
     if (url.includes("/api/v1/reports/reconciliation")) {
       return json([issue]);
+    }
+    if (url.includes("/api/v1/imports/preview")) {
+      return json(importBatch);
+    }
+    if (url.includes("/api/v1/imports/batch-1/commit")) {
+      return json({ ...importBatch, status: "committed", committedRows: 1, proposedCreates: 0, rows: [{ ...importBatch.rows[0], status: "committed", result: { status: "committed" } }] });
     }
     return json({ detail: "Not found" }, 404);
   }));
@@ -91,5 +131,16 @@ describe("TrancheAI administrative UI", () => {
     renderPage(<ReconciliationPage />);
     expect(await screen.findByText("missing_payment_reference")).toBeInTheDocument();
     expect(screen.getByText(/missing a payment reference/)).toBeInTheDocument();
+  });
+
+  it("previews and commits an import batch", async () => {
+    renderPage(<ImportsExportsPage />);
+    const file = new File(["project_code,project_title\nTRAI-UI-001,UI import\n"], "projects.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText("CSV File"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: /Preview/ }));
+    expect(await screen.findByText("TRAI-UI-001")).toBeInTheDocument();
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Commit" }));
+    expect(await screen.findByText("committed")).toBeInTheDocument();
   });
 });

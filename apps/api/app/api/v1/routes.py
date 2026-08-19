@@ -4,7 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -16,11 +16,13 @@ from app.exports.csv_export import project_master_csv, tranche_register_csv
 from app.exports.rows import ProjectExportRecord, TrancheExportRecord
 from app.exports.xlsx_export import project_master_xlsx, tranche_register_xlsx
 from app.imports.csv_importer import template_csv
+from app.imports.workflow import commit_import_batch, create_import_preview, import_batch_payload, import_row_payload
 from app.models.domain import (
     AuditEventModel,
     AuthSessionModel,
     FundingRevisionModel,
     FundingSanctionModel,
+    ImportBatchModel,
     ProjectModel,
     TrancheModel,
     UserModel,
@@ -54,6 +56,12 @@ from app.services.workflow import (
     reject_tranche,
     submit_tranche,
     uuid,
+)
+from app.services.workflow import (
+    submit_revision as workflow_submit_revision,
+)
+from app.services.workflow import (
+    submit_sanction as workflow_submit_sanction,
 )
 
 router = APIRouter(prefix="/api/v1")
@@ -228,14 +236,10 @@ def create_sanction(project_id: str, payload: SanctionCreate, session: Session =
 @router.post("/sanctions/{sanction_id}/submit")
 def submit_sanction(sanction_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
-    sanction = _sanction_or_404(session, sanction_id)
-    if sanction.status != "draft":
-        raise HTTPException(status_code=400, detail="Only draft sanctions can be submitted.")
-    previous = {"status": sanction.status}
-    sanction.status = "submitted"
-    sanction.version += 1
-    audit(session, actor=user, entity_type="funding_sanction", entity_id=sanction.id, action="submit", previous=previous, new={"status": sanction.status})
-    return _commit_payload(session, lambda: _sanction_payload(sanction))
+    try:
+        return _commit_payload(session, lambda: _sanction_payload(workflow_submit_sanction(session, _sanction_or_404(session, sanction_id), user)), status.HTTP_400_BAD_REQUEST)
+    except WorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/sanctions/{sanction_id}/approve")
@@ -267,14 +271,10 @@ def create_revision(project_id: str, payload: RevisionCreate, session: Session =
 @router.post("/funding-revisions/{revision_id}/submit")
 def submit_revision(revision_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
-    revision = _revision_or_404(session, revision_id)
-    if revision.status != "draft":
-        raise HTTPException(status_code=400, detail="Only draft funding revisions can be submitted.")
-    previous = {"status": revision.status}
-    revision.status = "submitted"
-    revision.version += 1
-    audit(session, actor=user, entity_type="funding_revision", entity_id=revision.id, action="submit", previous=previous, new={"status": revision.status})
-    return _commit_payload(session, lambda: _revision_payload(revision))
+    try:
+        return _commit_payload(session, lambda: _revision_payload(workflow_submit_revision(session, _revision_or_404(session, revision_id), user)), status.HTTP_400_BAD_REQUEST)
+    except WorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/funding-revisions/{revision_id}/approve")
@@ -418,6 +418,52 @@ def import_template(import_type: str, user: UserModel = Depends(_current_user)) 
     return Response(content, media_type="text/csv; charset=utf-8")
 
 
+@router.post("/imports/preview")
+def preview_import(
+    import_type: str = Form(...),
+    file: UploadFile = File(...),
+    session: Session = Depends(get_session),
+    user: UserModel = Depends(_current_user),
+) -> dict[str, object]:
+    _require(user, "write")
+    try:
+        batch = create_import_preview(
+            session,
+            import_type=import_type,
+            filename=file.filename or "import.csv",
+            content_type=file.content_type,
+            content=file.file.read(),
+            actor=user,
+        )
+    except WorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return import_batch_payload(batch)
+
+
+@router.get("/imports/{batch_id}")
+def get_import_batch(batch_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    _require(user, "read")
+    batch = _import_batch_or_404(session, batch_id)
+    return import_batch_payload(batch)
+
+
+@router.get("/imports/{batch_id}/rows")
+def get_import_rows(batch_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> list[dict[str, object]]:
+    _require(user, "read")
+    batch = _import_batch_or_404(session, batch_id)
+    return [import_row_payload(row) for row in sorted(batch.rows, key=lambda item: item.row_number)]
+
+
+@router.post("/imports/{batch_id}/commit")
+def commit_import(batch_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    _require(user, "write")
+    try:
+        batch = commit_import_batch(session, batch_id, user)
+    except WorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return import_batch_payload(batch)
+
+
 @router.get("/exports/project-master.csv")
 def export_project_master_csv(session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> Response:
     _require(user, "export")
@@ -493,6 +539,13 @@ def _tranche_or_404(session: Session, tranche_id: str) -> TrancheModel:
     if tranche is None:
         raise HTTPException(status_code=404, detail="Tranche not found.")
     return tranche
+
+
+def _import_batch_or_404(session: Session, batch_id: str) -> ImportBatchModel:
+    batch = session.get(ImportBatchModel, batch_id)
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Import batch not found.")
+    return batch
 
 
 def _project_payload(session: Session, project: ProjectModel) -> dict[str, object]:

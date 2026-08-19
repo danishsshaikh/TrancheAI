@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import csv
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
-from io import BytesIO
+from io import BytesIO, StringIO
 from zipfile import ZipFile
 
 import pytest
@@ -11,13 +12,17 @@ from sqlalchemy import delete, select
 
 from app.core.enums import Role
 from app.db.session import SessionLocal
+from app.imports.csv_importer import PROJECT_HEADERS, REVISION_HEADERS, SANCTION_HEADERS, TRANCHE_HEADERS
 from app.main import app
 from app.models.domain import (
     AuditEventModel,
     AuthSessionModel,
     FundingRevisionModel,
     FundingSanctionModel,
+    ImportBatchModel,
+    ImportRowModel,
     ProjectModel,
+    ProjectParticipantModel,
     TrancheModel,
     UserModel,
 )
@@ -28,12 +33,12 @@ from app.services.workflow import uuid
 @pytest.fixture(autouse=True)
 def clean_database():
     with SessionLocal() as session:
-        for model in [AuditEventModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectModel, AuthSessionModel, UserModel]:
+        for model in [AuditEventModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))
         session.commit()
     yield
     with SessionLocal() as session:
-        for model in [AuditEventModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectModel, AuthSessionModel, UserModel]:
+        for model in [AuditEventModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))
         session.commit()
 
@@ -61,6 +66,23 @@ def login(client: TestClient, email: str) -> dict[str, str]:
     response = client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def csv_content(headers: list[str], rows: list[list[object]]) -> str:
+    output = StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(headers)
+    writer.writerows(rows)
+    return output.getvalue()
+
+
+def preview_import(client: TestClient, headers: dict[str, str], import_type: str, filename: str, content: str):
+    return client.post(
+        "/api/v1/imports/preview",
+        headers=headers,
+        data={"import_type": import_type},
+        files={"file": (filename, content.encode("utf-8"), "text/csv")},
+    )
 
 
 def test_authenticated_database_backed_fund_workflow(client: TestClient) -> None:
@@ -208,6 +230,167 @@ def test_readonly_roles_cannot_modify_records(client: TestClient) -> None:
     auditor_headers = login(client, "auditor@example.test")
     assert client.post("/api/v1/projects", headers=viewer_headers, json={"project_code": "NOPE", "title": "Nope"}).status_code == 403
     assert client.post("/api/v1/projects", headers=auditor_headers, json={"project_code": "NOPE2", "title": "Nope"}).status_code == 403
+
+
+def test_project_import_preview_commit_and_repeat_duplicate_protection(client: TestClient) -> None:
+    create_user("admin@example.test", Role.ADMINISTRATOR)
+    admin_headers = login(client, "admin@example.test")
+    content = csv_content(
+        PROJECT_HEADERS,
+        [[" trai-imp-001 ", "Imported Marathi प्रकल्प", "MIT ADT", "Engineering", "Mechanical", "2026-27", "A", "Active", "01/08/2026", "31-12-2026", "Dr Import", "Asha; Vivek", "Robotics", "4", "Prototype", "N/A"]],
+    )
+
+    preview = preview_import(client, admin_headers, "projects", "projects.csv", content)
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["rowsDetected"] == 1
+    assert body["validRows"] == 1
+    assert body["proposedCreates"] == 1
+    assert body["rows"][0]["normalizedValues"]["project_code"] == "TRAI-IMP-001"
+
+    with SessionLocal() as session:
+        assert session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-IMP-001")) is None
+        assert session.scalar(select(ImportBatchModel).where(ImportBatchModel.id == body["id"])) is not None
+
+    commit = client.post(f"/api/v1/imports/{body['id']}/commit", headers=admin_headers)
+    assert commit.status_code == 200, commit.text
+    committed = commit.json()
+    assert committed["status"] == "committed"
+    assert committed["committedRows"] == 1
+
+    with SessionLocal() as session:
+        project = session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-IMP-001"))
+        assert project is not None
+        assert project.title == "Imported Marathi प्रकल्प"
+        assert session.scalar(select(ProjectParticipantModel).where(ProjectParticipantModel.project_id == project.id, ProjectParticipantModel.is_primary.is_(True))) is not None
+        assert session.scalar(select(AuditEventModel).where(AuditEventModel.action == "commit_import")) is not None
+
+    repeat = preview_import(client, admin_headers, "projects", "projects.csv", content)
+    assert repeat.status_code == 200, repeat.text
+    repeated = repeat.json()
+    assert repeated["duplicateRows"] == 1
+    assert repeated["proposedCreates"] == 0
+    assert repeated["rows"][0]["status"] == "duplicate"
+
+
+def test_import_preview_validation_for_sanctions_revisions_and_tranches(client: TestClient) -> None:
+    create_user("admin@example.test", Role.ADMINISTRATOR)
+    admin_headers = login(client, "admin@example.test")
+    with SessionLocal() as session:
+        project = ProjectModel(id=uuid(), project_code="TRAI-IMP-BASE", title="Import base", project_status="active")
+        session.add(project)
+        session.add(TrancheModel(id=uuid(), project_id=project.id, sequence_number=1, transaction_type="advance", requested_amount=Decimal("1000.00"), approved_amount=Decimal("1000.00")))
+        session.commit()
+
+    bad_header = preview_import(client, admin_headers, "projects", "bad.csv", "wrong,headers\n1,2\n")
+    assert bad_header.status_code == 400
+    assert "Invalid headers" in bad_header.text
+
+    sanctions = preview_import(
+        client,
+        admin_headers,
+        "funding_sanctions",
+        "sanctions.csv",
+        csv_content(
+            SANCTION_HEADERS,
+            [
+                ["TRAI-IMP-BASE", "SAN-VALID", "01/08/2026", "₹1,00,000", "N/A", "2026-27", "submitted", "N/A"],
+                ["TRAI-IMP-BASE", "SAN-EMPTY", "2026-08-01", "", "", "", "draft", ""],
+                ["UNKNOWN", "SAN-UNKNOWN", "2026-08-01", "1000", "", "", "draft", ""],
+                ["TRAI-IMP-BASE", "SAN-DATE", "not-a-date", "1000", "", "", "draft", ""],
+            ],
+        ),
+    )
+    assert sanctions.status_code == 200, sanctions.text
+    sanction_body = sanctions.json()
+    assert sanction_body["validRows"] == 1
+    assert sanction_body["invalidRows"] == 3
+    messages = " ".join(" ".join(row["errors"]) for row in sanction_body["rows"])
+    assert "sanction_amount is required" in messages
+    assert "Unknown project_code UNKNOWN" in messages
+    assert "Invalid date" in messages
+    assert sanction_body["rows"][0]["normalizedValues"]["sanction_amount"] == "100000.00"
+
+    revisions = preview_import(
+        client,
+        admin_headers,
+        "funding_revisions",
+        "revisions.csv",
+        csv_content(
+            REVISION_HEADERS,
+            [
+                ["TRAI-IMP-BASE", 1, "Increase", "01-Aug-2026", "50,000", "REV-1", "More funding", "draft", ""],
+                ["TRAI-IMP-BASE", 2, "Reduction", "2026-08-02", "25000", "REV-2", "Scope change", "draft", ""],
+            ],
+        ),
+    )
+    assert revisions.status_code == 200, revisions.text
+    assert revisions.json()["validRows"] == 2
+
+    tranches = preview_import(
+        client,
+        admin_headers,
+        "tranches",
+        "tranches.csv",
+        csv_content(
+            TRANCHE_HEADERS,
+            [
+                ["TRAI-IMP-BASE", 1, "Advance", "", "", "1000", "1000", "0", "0", "0", "2026-08-01", "", "", "", "", "draft", "", "", ""],
+                ["TRAI-IMP-BASE", 2, "Advance", "", "", "₹5,000", "5000", "0", "0", "0", "2026-08-01", "", "", "", "", "draft", "", "", ""],
+                ["TRAI-IMP-BASE", 2, "Advance", "", "", "₹5,000", "5000", "0", "0", "0", "2026-08-01", "", "", "", "", "draft", "", "", ""],
+                ["TRAI-IMP-BASE", 3, "Advance", "", "", "1000", "2000", "0", "0", "0", "2026-08-01", "", "", "", "", "draft", "", "", ""],
+            ],
+        ),
+    )
+    assert tranches.status_code == 200, tranches.text
+    tranche_body = tranches.json()
+    assert tranche_body["validRows"] == 1
+    assert tranche_body["duplicateRows"] == 2
+    assert tranche_body["invalidRows"] == 1
+    assert "approved_amount cannot exceed requested_amount" in str(tranche_body["rows"])
+
+
+def test_import_commit_uses_financial_validation_and_reports_partial_failure(client: TestClient) -> None:
+    create_user("admin@example.test", Role.ADMINISTRATOR)
+    admin_headers = login(client, "admin@example.test")
+    with SessionLocal() as session:
+        project = ProjectModel(id=uuid(), project_code="TRAI-IMP-LIMIT", title="Import limit", project_status="active")
+        session.add(project)
+        session.add(FundingSanctionModel(id=uuid(), project_id=project.id, sanction_reference="SAN-LIMIT", amount=Decimal("100000.00"), status="approved"))
+        session.commit()
+
+    preview = preview_import(
+        client,
+        admin_headers,
+        "tranches",
+        "limit-tranches.csv",
+        csv_content(
+            TRANCHE_HEADERS,
+            [
+                ["TRAI-IMP-LIMIT", 1, "Advance", "", "", "70000", "70000", "0", "0", "0", "2026-08-01", "", "", "", "", "approved", "", "", ""],
+                ["TRAI-IMP-LIMIT", 2, "Advance", "", "", "70000", "70000", "0", "0", "0", "2026-08-01", "", "", "", "", "approved", "", "", ""],
+            ],
+        ),
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["validRows"] == 2
+
+    commit = client.post(f"/api/v1/imports/{preview.json()['id']}/commit", headers=admin_headers)
+    assert commit.status_code == 200, commit.text
+    body = commit.json()
+    assert body["status"] == "partial_failed"
+    assert body["committedRows"] == 1
+    assert body["failedRows"] == 1
+    assert "available sanctioned balance" in str(body["rows"])
+
+    with SessionLocal() as session:
+        persisted_project = session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-IMP-LIMIT"))
+        assert persisted_project is not None
+        tranches = list(session.scalars(select(TrancheModel).where(TrancheModel.project_id == persisted_project.id)))
+        assert len(tranches) == 1
+        assert tranches[0].status == "approved"
+        assert tranches[0].approved_amount == Decimal("70000.00")
+        assert session.scalar(select(AuditEventModel).where(AuditEventModel.action == "commit_import")) is not None
 
 
 def test_competing_tranche_approvals_cannot_overrun_sanctioned_balance(client: TestClient) -> None:

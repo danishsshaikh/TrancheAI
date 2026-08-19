@@ -27,6 +27,7 @@ export interface ProjectRow {
   academicYear?: string;
   status: string;
   fundingStatus: string;
+  version: number;
   summary: FinancialSummary;
 }
 

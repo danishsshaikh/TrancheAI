@@ -12,6 +12,7 @@ const projects: ProjectRow[] = [{
   department: "Robotics",
   status: "active",
   fundingStatus: "balanced",
+  version: 1,
   summary: {
     totalSanctionedAmount: "500000.00",
     netDisbursedAmount: "100000.00",

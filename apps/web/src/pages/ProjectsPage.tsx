@@ -7,11 +7,17 @@ import { ProjectTable } from "../features/projects/ProjectTable";
 
 export function ProjectsPage() {
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
   const token = useToken();
   const queryClient = useQueryClient();
   const [newProject, setNewProject] = useState({ project_code: "", title: "", school: "", department: "" });
-  const params = useMemo(() => new URLSearchParams(query ? { q: query } : {}), [query]);
-  const { data = [], isLoading, error } = useQuery({ queryKey: ["projects", query], queryFn: () => fetchProjects(token, params) });
+  const params = useMemo(() => {
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (statusFilter) next.set("status", statusFilter);
+    return next;
+  }, [query, statusFilter]);
+  const { data = [], isLoading, error } = useQuery({ queryKey: ["projects", query, statusFilter], queryFn: () => fetchProjects(token, params) });
   const createMutation = useMutation({
     mutationFn: () => createProject(token, { ...newProject, project_status: "active" }),
     onSuccess: () => {
@@ -33,10 +39,17 @@ export function ProjectsPage() {
       </div>
       <div className="flex flex-col gap-2 rounded-md border border-line bg-panel p-3 md:flex-row">
         <input className="focus-ring min-w-0 flex-1 rounded-md border border-line bg-surface px-3 py-2 text-sm" placeholder="Search by code, title or department" value={query} onChange={(event) => setQuery(event.target.value)} />
-        <button className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-line px-3 py-2 text-sm">
+        <label className="inline-flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm">
           <Filter className="h-4 w-4" />
-          Filters
-        </button>
+          <select className="focus-ring bg-transparent" aria-label="Project status filter" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="active">Active</option>
+            <option value="on_hold">On hold</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </label>
       </div>
       <form className="grid gap-2 rounded-md border border-line bg-panel p-3 md:grid-cols-[1fr_2fr_1fr_1fr_auto]" onSubmit={(event) => { event.preventDefault(); createMutation.mutate(); }}>
         <input className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-sm" placeholder="Project code" value={newProject.project_code} onChange={(event) => setNewProject((value) => ({ ...value, project_code: event.target.value }))} />

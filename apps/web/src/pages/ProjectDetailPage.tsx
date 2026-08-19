@@ -1,18 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useParams } from "react-router-dom";
-import { approveRevision, approveSanction, createRevision, createSanction, createTranche, fetchProject, trancheAction } from "../api/client";
-import { useToken } from "../app/AuthContext";
+import { approveRevision, approveSanction, createRevision, createSanction, createTranche, fetchProject, fetchProjectAudit, trancheAction, updateProject } from "../api/client";
+import { useAuth, useToken } from "../app/AuthContext";
 import { Metric } from "../components/Metric";
 
 export function ProjectDetailPage() {
   const { projectId } = useParams();
   const token = useToken();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [amount, setAmount] = useState("0.00");
+  const [projectForm, setProjectForm] = useState({ title: "", school: "", department: "", status: "draft" });
   const { data: project, isLoading, error } = useQuery({ queryKey: ["project", projectId], queryFn: () => fetchProject(token, projectId ?? "") });
+  const canReadAudit = user?.role === "administrator" || user?.role === "auditor";
+  const auditHistory = useQuery({ queryKey: ["project", projectId, "audit"], queryFn: () => fetchProjectAudit(token, projectId ?? ""), enabled: Boolean(canReadAudit && projectId), retry: false });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["project", projectId] });
+  useEffect(() => {
+    if (project) {
+      setProjectForm({ title: project.title, school: project.school ?? "", department: project.department ?? "", status: project.status });
+    }
+  }, [project]);
+  const saveProject = useMutation({
+    mutationFn: () => updateProject(token, projectId ?? "", {
+      title: projectForm.title,
+      school: projectForm.school || null,
+      department: projectForm.department || null,
+      project_status: projectForm.status,
+      version: project?.version,
+    }),
+    onSuccess: refresh,
+  });
   const addSanction = useMutation({ mutationFn: () => createSanction(token, projectId ?? "", { sanction_reference: `SAN-${Date.now()}`, amount }), onSuccess: refresh });
   const addRevision = useMutation({ mutationFn: () => createRevision(token, projectId ?? "", { revision_number: project?.fundingRevisions.length ? project.fundingRevisions.length + 1 : 1, revision_type: "increase", amount }), onSuccess: refresh });
   const addTranche = useMutation({ mutationFn: () => createTranche(token, projectId ?? "", { sequence_number: project?.tranches.length ? project.tranches.length + 1 : 1, transaction_type: "advance", requested_amount: amount, approved_amount: amount }), onSuccess: refresh });
@@ -34,6 +53,23 @@ export function ProjectDetailPage() {
         <Metric label="Reconciliation" value={project.summary.reconciliationStatus} />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
+        <section className="rounded-md border border-line bg-panel p-4 lg:col-span-2">
+          <h2 className="text-base font-semibold">Project Fields</h2>
+          <div className="mt-3 grid gap-2 md:grid-cols-[2fr_1fr_1fr_160px_auto]">
+            <input className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-sm" aria-label="Project title" value={projectForm.title} onChange={(event) => setProjectForm((value) => ({ ...value, title: event.target.value }))} />
+            <input className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-sm" aria-label="School" value={projectForm.school} onChange={(event) => setProjectForm((value) => ({ ...value, school: event.target.value }))} />
+            <input className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-sm" aria-label="Department" value={projectForm.department} onChange={(event) => setProjectForm((value) => ({ ...value, department: event.target.value }))} />
+            <select className="focus-ring rounded-md border border-line bg-surface px-3 py-2 text-sm" aria-label="Project status" value={projectForm.status} onChange={(event) => setProjectForm((value) => ({ ...value, status: event.target.value }))}>
+              <option value="draft">Draft</option>
+              <option value="active">Active</option>
+              <option value="on_hold">On hold</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <button className="focus-ring rounded-md border border-line px-3 py-2 text-sm" onClick={() => saveProject.mutate()} disabled={saveProject.isPending}>Save</button>
+          </div>
+          {saveProject.error ? <div className="mt-3 text-sm text-danger">Project update failed. Refresh and check role permissions.</div> : null}
+        </section>
         <section className="rounded-md border border-line bg-panel p-4 lg:col-span-2">
           <h2 className="text-base font-semibold">Workflow Actions</h2>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -61,6 +97,21 @@ export function ProjectDetailPage() {
             </div>
           )}
         />
+        <section className="rounded-md border border-line bg-panel p-4 lg:col-span-2">
+          <h2 className="text-base font-semibold">Audit History</h2>
+          {!canReadAudit ? <div className="mt-3 text-sm text-muted">Visible to administrators and auditors.</div> : null}
+          {auditHistory.isLoading ? <div className="mt-3 text-sm text-muted">Loading audit history.</div> : null}
+          {auditHistory.error ? <div className="mt-3 text-sm text-danger">Audit history could not be loaded.</div> : null}
+          <div className="mt-3 divide-y divide-line text-sm">
+            {(auditHistory.data ?? []).slice(0, 10).map((event) => (
+              <div key={event.id} className="grid gap-2 py-2 md:grid-cols-[160px_1fr_180px]">
+                <span className="font-medium">{event.action}</span>
+                <span className="text-muted">{event.entityType}</span>
+                <span className="text-muted">{event.timestamp ? new Date(event.timestamp).toLocaleString() : ""}</span>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );

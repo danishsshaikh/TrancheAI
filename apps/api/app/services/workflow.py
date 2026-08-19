@@ -76,6 +76,16 @@ def approve_sanction(session: Session, sanction: FundingSanctionModel, actor: Us
     return sanction
 
 
+def submit_sanction(session: Session, sanction: FundingSanctionModel, actor: UserModel) -> FundingSanctionModel:
+    if sanction.status != "draft":
+        raise WorkflowError("Only draft sanctions can be submitted.")
+    old = {"status": sanction.status}
+    sanction.status = "submitted"
+    sanction.version += 1
+    audit(session, actor=actor, entity_type="funding_sanction", entity_id=sanction.id, action="submit", previous=old, new={"status": sanction.status})
+    return sanction
+
+
 def approve_revision(session: Session, revision: FundingRevisionModel, actor: UserModel) -> FundingRevisionModel:
     if revision.status not in {"draft", "submitted"}:
         raise WorkflowError("Only draft or submitted funding revisions can be approved.")
@@ -87,6 +97,16 @@ def approve_revision(session: Session, revision: FundingRevisionModel, actor: Us
     revision.approved_at = datetime.now(timezone.utc)
     revision.version += 1
     audit(session, actor=actor, entity_type="funding_revision", entity_id=revision.id, action="approve", previous=old, new={"status": revision.status})
+    return revision
+
+
+def submit_revision(session: Session, revision: FundingRevisionModel, actor: UserModel) -> FundingRevisionModel:
+    if revision.status != "draft":
+        raise WorkflowError("Only draft funding revisions can be submitted.")
+    old = {"status": revision.status}
+    revision.status = "submitted"
+    revision.version += 1
+    audit(session, actor=actor, entity_type="funding_revision", entity_id=revision.id, action="submit", previous=old, new={"status": revision.status})
     return revision
 
 

@@ -37,6 +37,8 @@ docker compose run --rm api pytest
 ```bash
 cd apps/web
 npm install
+npm run typecheck
+npm run lint
 npm test
 npm run build
 ```
@@ -53,6 +55,11 @@ Manual scenarios:
 - Reject an over-disbursement.
 - Generate project master CSV and XLSX.
 - Generate tranche register CSV and XLSX.
+- Download each canonical import template.
+- Preview a projects CSV and verify no project is created before commit.
+- Commit the reviewed projects import and verify project/audit records.
+- Preview funding sanctions, funding revisions and tranches with valid and invalid rows.
+- Commit a tranche import that exceeds available funding and verify partial failure is reported.
 - Verify protected routes reject anonymous requests.
 - Verify read-only users cannot modify projects or funding records.
 - Verify Marathi speech transcripts remain editable before AI submission when that provider is enabled.
