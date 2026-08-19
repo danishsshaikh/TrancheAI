@@ -251,6 +251,34 @@ class ImportRowModel(Base):
     batch: Mapped[ImportBatchModel] = relationship(back_populates="rows")
 
 
+class AIProposalModel(TimestampMixin, Base):
+    __tablename__ = "ai_proposals"
+    __table_args__ = (
+        Index("ix_ai_proposals_user_id", "user_id"),
+        Index("ix_ai_proposals_status", "status"),
+        Index("ix_ai_proposals_action", "action"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    action: Mapped[str] = mapped_column(String(96), nullable=False)
+    arguments: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    target_entity_type: Mapped[str | None] = mapped_column(String(64))
+    target_entity_id: Mapped[str | None] = mapped_column(String(128))
+    current_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    proposed_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    validation_result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending_confirmation", nullable=False)
+    provider: Mapped[str | None] = mapped_column(String(64))
+    model: Mapped[str | None] = mapped_column(String(255))
+    original_request: Mapped[str] = mapped_column(Text, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+
 class AuditEventModel(Base):
     __tablename__ = "audit_events"
 

@@ -10,6 +10,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.ai.assistant_service import AIAssistantError, AIAssistantService
+from app.ai.provider import OpenAICompatibleProvider
+from app.ai.schemas import AIRequestPayload
+from app.core.config import settings
 from app.core.enums import Role
 from app.db.session import get_session
 from app.exports.csv_export import project_master_csv, tranche_register_csv
@@ -48,6 +52,9 @@ from app.services.workflow import (
     approve_tranche,
     audit,
     cancel_tranche,
+    create_funding_revision_record,
+    create_project_record,
+    create_tranche_record,
     project_records,
     reconciliation_rows,
     record_disbursement,
@@ -55,6 +62,7 @@ from app.services.workflow import (
     record_utilization,
     reject_tranche,
     submit_tranche,
+    update_project_fields,
     uuid,
 )
 from app.services.workflow import (
@@ -125,6 +133,41 @@ def me(user: UserModel = Depends(_current_user)) -> dict[str, str]:
     return _user_payload(user)
 
 
+@router.post("/ai/requests")
+def create_ai_request(payload: AIRequestPayload, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    return _ai_service(session).request(
+        actor=user,
+        text=payload.text,
+        current_project_id=payload.current_project_id,
+        current_project_code=payload.current_project_code,
+        language=payload.language,
+    )
+
+
+@router.get("/ai/proposals/{proposal_id}")
+def get_ai_proposal(proposal_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    try:
+        return _ai_service(session).get_proposal(proposal_id=proposal_id, actor=user)
+    except AIAssistantError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/ai/proposals/{proposal_id}/confirm")
+def confirm_ai_proposal(proposal_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    try:
+        return _ai_service(session).confirm(proposal_id=proposal_id, actor=user)
+    except AIAssistantError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/ai/proposals/{proposal_id}/cancel")
+def cancel_ai_proposal(proposal_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    try:
+        return _ai_service(session).cancel(proposal_id=proposal_id, actor=user)
+    except AIAssistantError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/projects")
 def list_projects(
     q: str | None = None,
@@ -160,9 +203,7 @@ def list_projects(
 @router.post("/projects", status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
-    project = ProjectModel(id=uuid(), project_code=payload.project_code.strip(), title=payload.title, institution=payload.institution, school=payload.school, department=payload.department, academic_year=payload.academic_year, cohort=payload.cohort, project_status=payload.project_status, funding_status=payload.funding_status, start_date=payload.start_date, expected_completion_date=payload.expected_completion_date, remarks=payload.remarks, created_by=user.id, updated_by=user.id)
-    session.add(project)
-    audit(session, actor=user, entity_type="project", entity_id=project.id, action="create", new={"project_code": project.project_code, "title": project.title})
+    project = create_project_record(session, user, {"project_code": payload.project_code.strip(), "title": payload.title, "institution": payload.institution, "school": payload.school, "department": payload.department, "academic_year": payload.academic_year, "cohort": payload.cohort, "project_status": payload.project_status, "funding_status": payload.funding_status, "start_date": payload.start_date, "expected_completion_date": payload.expected_completion_date, "remarks": payload.remarks})
     return _commit_payload(session, lambda: _project_payload(session, project))
 
 
@@ -181,14 +222,10 @@ def get_project(project_id: str, session: Session = Depends(get_session), user: 
 def update_project(project_id: str, payload: ProjectUpdate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
     project = _project_or_404(session, project_id)
-    if project.version != payload.version:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Project was updated by another user. Refresh and try again.")
-    previous = {"title": project.title, "project_status": project.project_status, "version": project.version}
-    for field, value in payload.model_dump(exclude_unset=True, exclude={"version"}).items():
-        setattr(project, field, value)
-    project.updated_by = user.id
-    project.version += 1
-    audit(session, actor=user, entity_type="project", entity_id=project.id, action="update", previous=previous, new={"version": project.version})
+    try:
+        update_project_fields(session, project, user, payload.model_dump(exclude_unset=True, exclude={"version"}), payload.version)
+    except WorkflowError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _commit_payload(session, lambda: _project_payload(session, project))
 
 
@@ -261,10 +298,8 @@ def list_revisions(project_id: str, session: Session = Depends(get_session), use
 @router.post("/projects/{project_id}/funding-revisions", status_code=status.HTTP_201_CREATED)
 def create_revision(project_id: str, payload: RevisionCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
-    _project_or_404(session, project_id)
-    revision = FundingRevisionModel(id=uuid(), project_id=project_id, revision_number=payload.revision_number, revision_type=payload.revision_type, revision_date=payload.revision_date, amount=payload.amount, status="draft", reason=payload.reason)
-    session.add(revision)
-    audit(session, actor=user, entity_type="funding_revision", entity_id=revision.id, action="create", new={"amount": str(revision.amount), "revision_type": revision.revision_type})
+    project = _project_or_404(session, project_id)
+    revision = create_funding_revision_record(session, project, user, {"revision_number": payload.revision_number, "revision_type": payload.revision_type, "revision_date": payload.revision_date, "amount": payload.amount, "reason": payload.reason})
     return _commit_payload(session, lambda: _revision_payload(revision), status.HTTP_400_BAD_REQUEST)
 
 
@@ -296,12 +331,11 @@ def list_project_tranches(project_id: str, session: Session = Depends(get_sessio
 @router.post("/projects/{project_id}/tranches", status_code=status.HTTP_201_CREATED)
 def create_tranche(project_id: str, payload: TrancheCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
-    _project_or_404(session, project_id)
-    tranche = TrancheModel(id=uuid(), project_id=project_id, sequence_number=payload.sequence_number, transaction_type=payload.transaction_type, requested_amount=payload.requested_amount, approved_amount=payload.approved_amount, request_date=payload.request_date, payment_reference=payload.payment_reference, remarks=payload.remarks)
-    if tranche.approved_amount > tranche.requested_amount:
-        raise HTTPException(status_code=400, detail="Approved amount cannot exceed requested amount.")
-    session.add(tranche)
-    audit(session, actor=user, entity_type="tranche", entity_id=tranche.id, action="create", new={"sequence_number": tranche.sequence_number, "requested_amount": str(tranche.requested_amount)})
+    project = _project_or_404(session, project_id)
+    try:
+        tranche = create_tranche_record(session, project, user, {"sequence_number": payload.sequence_number, "transaction_type": payload.transaction_type, "requested_amount": payload.requested_amount, "approved_amount": payload.approved_amount, "request_date": payload.request_date, "payment_reference": payload.payment_reference, "remarks": payload.remarks})
+    except WorkflowError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _commit_payload(session, lambda: _tranche_payload(tranche), status.HTTP_400_BAD_REQUEST)
 
 
@@ -487,6 +521,24 @@ def export_project_master_workbook(session: Session = Depends(get_session), user
 def export_tranche_register_workbook(session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> Response:
     _require(user, "export")
     return Response(tranche_register_xlsx(_tranche_export_records(session)), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def _ai_service(session: Session) -> AIAssistantService:
+    provider = OpenAICompatibleProvider(
+        base_url=settings.ai_base_url,
+        model=settings.ai_model,
+        api_key=settings.ai_api_key,
+        timeout_seconds=settings.ai_timeout_seconds,
+        max_tokens=settings.ai_max_tokens,
+        temperature=settings.ai_temperature,
+    )
+    return AIAssistantService(
+        session=session,
+        provider=provider,
+        ai_enabled=settings.ai_enabled,
+        provider_base_url=settings.ai_base_url,
+        provider_model=settings.ai_model,
+    )
 
 
 def _require(user: UserModel, action: str) -> None:

@@ -2,6 +2,7 @@ import type { PropsWithChildren } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { Layout } from "../components/Layout";
+import { AiAssistantPage } from "../pages/AiAssistantPage";
 import { DashboardPage } from "../pages/DashboardPage";
 import { ProjectDetailPage } from "../pages/ProjectDetailPage";
 import { ProjectsPage } from "../pages/ProjectsPage";
@@ -25,6 +26,7 @@ function ProtectedApp() {
       <Layout>
         <Routes>
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/ai" element={<AiAssistantPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="/tranches/new" element={<TrancheFormPage />} />

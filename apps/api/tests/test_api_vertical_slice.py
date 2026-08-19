@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO, StringIO
 from zipfile import ZipFile
@@ -9,12 +11,18 @@ from zipfile import ZipFile
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
+from app.ai.assistant_service import AIAssistantService
+from app.ai.provider import FakeAIAssistantProvider
+from app.ai.schemas import AIProviderEnvelope
+from app.api.v1 import routes as api_routes
 from app.core.enums import Role
 from app.db.session import SessionLocal
 from app.imports.csv_importer import PROJECT_HEADERS, REVISION_HEADERS, SANCTION_HEADERS, TRANCHE_HEADERS
 from app.main import app
 from app.models.domain import (
+    AIProposalModel,
     AuditEventModel,
     AuthSessionModel,
     FundingRevisionModel,
@@ -33,12 +41,12 @@ from app.services.workflow import uuid
 @pytest.fixture(autouse=True)
 def clean_database():
     with SessionLocal() as session:
-        for model in [AuditEventModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
+        for model in [AuditEventModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))
         session.commit()
     yield
     with SessionLocal() as session:
-        for model in [AuditEventModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
+        for model in [AuditEventModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))
         session.commit()
 
@@ -83,6 +91,19 @@ def preview_import(client: TestClient, headers: dict[str, str], import_type: str
         data={"import_type": import_type},
         files={"file": (filename, content.encode("utf-8"), "text/csv")},
     )
+
+
+def fake_ai_service(envelope: AIProviderEnvelope) -> Callable[[Session], AIAssistantService]:
+    def factory(session: Session) -> AIAssistantService:
+        return AIAssistantService(
+            session=session,
+            provider=FakeAIAssistantProvider(envelope),
+            ai_enabled=True,
+            provider_base_url="http://127.0.0.1:3001/v1",
+            provider_model="server-configured-model",
+        )
+
+    return factory
 
 
 def test_authenticated_database_backed_fund_workflow(client: TestClient) -> None:
@@ -230,6 +251,120 @@ def test_readonly_roles_cannot_modify_records(client: TestClient) -> None:
     auditor_headers = login(client, "auditor@example.test")
     assert client.post("/api/v1/projects", headers=viewer_headers, json={"project_code": "NOPE", "title": "Nope"}).status_code == 403
     assert client.post("/api/v1/projects", headers=auditor_headers, json={"project_code": "NOPE2", "title": "Nope"}).status_code == 403
+
+
+def test_ai_disabled_endpoint_returns_controlled_error(client: TestClient) -> None:
+    create_user("viewer@example.test", Role.VIEWER)
+    headers = login(client, "viewer@example.test")
+    response = client.post("/api/v1/ai/requests", headers=headers, json={"text": "माझा प्रकल्प दाखवा"})
+    assert response.status_code == 200
+    assert response.json()["kind"] == "error"
+    assert "disabled" in response.json()["message"]
+
+
+def test_ai_create_project_proposal_persists_until_confirmation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    create_user("fund@example.test", Role.FUND_ADMINISTRATOR)
+    headers = login(client, "fund@example.test")
+    envelope = AIProviderEnvelope(
+        kind="proposal",
+        message="Create project proposal ready.",
+        action="create_project",
+        arguments={"project_code": "TRAI-AI-001", "title": "AI Marathi प्रकल्प", "project_status": "active", "department": "Robotics"},
+    )
+    monkeypatch.setattr(api_routes, "_ai_service", fake_ai_service(envelope))
+
+    response = client.post("/api/v1/ai/requests", headers=headers, json={"text": "Create TRAI-AI-001"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["kind"] == "proposal"
+    proposal_id = body["proposal"]["id"]
+
+    with SessionLocal() as session:
+        assert session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-AI-001")) is None
+        proposal = session.get(AIProposalModel, proposal_id)
+        assert proposal is not None
+        assert proposal.status == "pending_confirmation"
+        assert session.scalar(select(AuditEventModel).where(AuditEventModel.action == "preview_ai_proposal")) is not None
+
+    confirm = client.post(f"/api/v1/ai/proposals/{proposal_id}/confirm", headers=headers)
+    assert confirm.status_code == 200, confirm.text
+    assert confirm.json()["kind"] == "result"
+
+    with SessionLocal() as session:
+        project = session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-AI-001"))
+        assert project is not None
+        assert project.title == "AI Marathi प्रकल्प"
+        proposal = session.get(AIProposalModel, proposal_id)
+        assert proposal is not None
+        assert proposal.status == "executed"
+        assert session.scalar(select(AuditEventModel).where(AuditEventModel.action == "confirm_ai_proposal")) is not None
+
+
+def test_ai_rejects_forbidden_update_fields_and_viewer_writes(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    create_user("fund@example.test", Role.FUND_ADMINISTRATOR)
+    create_user("viewer@example.test", Role.VIEWER)
+    fund_headers = login(client, "fund@example.test")
+    viewer_headers = login(client, "viewer@example.test")
+    project = client.post("/api/v1/projects", headers=fund_headers, json={"project_code": "TRAI-AI-GUARD", "title": "Guarded"})
+    assert project.status_code == 201, project.text
+
+    forbidden_update = AIProviderEnvelope(
+        kind="proposal",
+        message="Bad update.",
+        action="update_project",
+        arguments={"project_code": "TRAI-AI-GUARD", "updates": {"created_by": "attacker"}},
+    )
+    monkeypatch.setattr(api_routes, "_ai_service", fake_ai_service(forbidden_update))
+    rejected = client.post("/api/v1/ai/requests", headers=fund_headers, json={"text": "change internal field"})
+    assert rejected.status_code == 200
+    assert rejected.json()["kind"] == "error"
+    assert "cannot update" in rejected.json()["message"]
+
+    write_attempt = AIProviderEnvelope(
+        kind="proposal",
+        message="Create project.",
+        action="create_project",
+        arguments={"project_code": "TRAI-AI-VIEW", "title": "Viewer write"},
+    )
+    monkeypatch.setattr(api_routes, "_ai_service", fake_ai_service(write_attempt))
+    viewer_response = client.post("/api/v1/ai/requests", headers=viewer_headers, json={"text": "create project"})
+    assert viewer_response.status_code == 200
+    assert viewer_response.json()["kind"] == "error"
+    assert "not allowed" in viewer_response.json()["message"]
+
+
+def test_ai_expired_and_cross_user_proposals_cannot_execute(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    create_user("fund-a@example.test", Role.FUND_ADMINISTRATOR)
+    create_user("fund-b@example.test", Role.FUND_ADMINISTRATOR)
+    headers_a = login(client, "fund-a@example.test")
+    headers_b = login(client, "fund-b@example.test")
+    envelope = AIProviderEnvelope(
+        kind="proposal",
+        message="Create project proposal ready.",
+        action="create_project",
+        arguments={"project_code": "TRAI-AI-EXPIRED", "title": "Expired"},
+    )
+    monkeypatch.setattr(api_routes, "_ai_service", fake_ai_service(envelope))
+
+    response = client.post("/api/v1/ai/requests", headers=headers_a, json={"text": "create project"})
+    proposal_id = response.json()["proposal"]["id"]
+
+    other_user = client.post(f"/api/v1/ai/proposals/{proposal_id}/confirm", headers=headers_b)
+    assert other_user.status_code == 400
+
+    with SessionLocal() as session:
+        proposal = session.get(AIProposalModel, proposal_id)
+        assert proposal is not None
+        proposal.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        session.commit()
+
+    expired = client.post(f"/api/v1/ai/proposals/{proposal_id}/confirm", headers=headers_a)
+    assert expired.status_code == 200
+    assert expired.json()["kind"] == "error"
+    assert "expired" in expired.json()["message"]
+
+    with SessionLocal() as session:
+        assert session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-AI-EXPIRED")) is None
 
 
 def test_project_import_preview_commit_and_repeat_duplicate_protection(client: TestClient) -> None:

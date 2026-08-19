@@ -15,7 +15,7 @@ Implemented:
 - Validation and deterministic reconciliation services.
 - CSV import preview with normalization and row fingerprints.
 - CSV exports and structural XLSX workbook generation.
-- AI proposal boundary with allowlisted actions and confirmation flow.
+- AI assistant routes backed by an OpenAI-compatible provider, allowlisted actions and persisted confirmation proposals.
 - Speech-to-text boundary preserving Marathi transcripts.
 - React/Vite administrative shell wired to the API for login, dashboard, projects, tranches, reconciliation and exports.
 - Docker Compose server setup.
@@ -24,7 +24,8 @@ Implemented:
 
 Server verification required:
 
-- Live AI and STT providers.
+- Live Gemma provider through the configured OpenAI-compatible endpoint.
+- Live STT provider.
 - Manual browser workflow on the deployment server.
 
 ## Stack
@@ -62,6 +63,22 @@ docker compose up --build -d api web
 
 See [docs/server-runbook.md](docs/server-runbook.md).
 
+## AI Configuration
+
+The assistant is disabled by default for safe local development. On the server, configure the OpenAI-compatible Gemma endpoint through environment variables:
+
+```bash
+AI_ENABLED=true
+AI_BASE_URL=http://127.0.0.1:3001/v1
+AI_MODEL=<server-configured-model>
+AI_API_KEY=
+AI_TIMEOUT_SECONDS=60
+AI_MAX_TOKENS=2048
+AI_TEMPERATURE=0.1
+```
+
+The code does not call replica ports directly and does not hardcode a model name.
+
 ## Project Structure
 
 - `apps/api`: backend app, domain services, imports, exports, AI, speech, migrations and tests.
@@ -71,4 +88,8 @@ See [docs/server-runbook.md](docs/server-runbook.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). A final project license has not been chosen; see [docs/licensing-decision.md](docs/licensing-decision.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+TrancheAI is released under the Apache License 2.0. See [LICENSE](LICENSE) and [docs/licensing-decision.md](docs/licensing-decision.md).

@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { approveRevision, approveSanction, createRevision, createSanction, createTranche, fetchProject, fetchProjectAudit, trancheAction, updateProject } from "../api/client";
 import { useAuth, useToken } from "../app/AuthContext";
 import { Metric } from "../components/Metric";
@@ -44,7 +45,13 @@ export function ProjectDetailPage() {
     <div className="space-y-5">
       <div>
         <p className="text-sm text-muted">Projects / {project.projectCode}</p>
-        <h1 className="text-2xl font-semibold">{project.title}</h1>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <h1 className="text-2xl font-semibold">{project.title}</h1>
+          <Link className="focus-ring inline-flex w-fit items-center gap-2 rounded-md border border-line bg-panel px-3 py-2 text-sm" to={`/ai?projectId=${project.id}&projectCode=${encodeURIComponent(project.projectCode)}`}>
+            <Bot className="h-4 w-4 text-accent" />
+            AI Assistant
+          </Link>
+        </div>
       </div>
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Total Sanctioned" value={project.summary.totalSanctionedAmount} />

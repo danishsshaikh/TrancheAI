@@ -55,6 +55,41 @@ def audit(session: Session, *, actor: UserModel, entity_type: str, entity_id: st
     )
 
 
+def create_project_record(session: Session, actor: UserModel, values: dict[str, object]) -> ProjectModel:
+    project = ProjectModel(id=uuid(), created_by=actor.id, updated_by=actor.id, **values)
+    session.add(project)
+    audit(session, actor=actor, entity_type="project", entity_id=project.id, action="create", new={"project_code": project.project_code, "title": project.title})
+    return project
+
+
+def update_project_fields(session: Session, project: ProjectModel, actor: UserModel, values: dict[str, object], expected_version: int) -> ProjectModel:
+    if project.version != expected_version:
+        raise WorkflowError("Project was updated by another user. Refresh and try again.")
+    previous = {key: getattr(project, key) for key in values}
+    for field, value in values.items():
+        setattr(project, field, value)
+    project.updated_by = actor.id
+    project.version += 1
+    audit(session, actor=actor, entity_type="project", entity_id=project.id, action="update", previous=previous, new={**values, "version": project.version})
+    return project
+
+
+def create_funding_revision_record(session: Session, project: ProjectModel, actor: UserModel, values: dict[str, object]) -> FundingRevisionModel:
+    revision = FundingRevisionModel(id=uuid(), project_id=project.id, status="draft", **values)
+    session.add(revision)
+    audit(session, actor=actor, entity_type="funding_revision", entity_id=revision.id, action="create", new={"amount": str(revision.amount), "revision_type": revision.revision_type})
+    return revision
+
+
+def create_tranche_record(session: Session, project: ProjectModel, actor: UserModel, values: dict[str, object]) -> TrancheModel:
+    tranche = TrancheModel(id=uuid(), project_id=project.id, status="draft", **values)
+    if tranche.approved_amount > tranche.requested_amount:
+        raise WorkflowError("Approved amount cannot exceed requested amount.")
+    session.add(tranche)
+    audit(session, actor=actor, entity_type="tranche", entity_id=tranche.id, action="create", new={"sequence_number": tranche.sequence_number, "requested_amount": str(tranche.requested_amount)})
+    return tranche
+
+
 def approve_sanction(session: Session, sanction: FundingSanctionModel, actor: UserModel) -> FundingSanctionModel:
     if sanction.status not in {"draft", "submitted"}:
         raise WorkflowError("Only draft or submitted sanctions can be approved.")

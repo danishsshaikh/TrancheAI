@@ -9,6 +9,7 @@ node_modules/
 dist/
 coverage/
 htmlcov/
+*.tsbuildinfo
 *.pyc
 *.pyo
 *.sqlite
@@ -18,4 +19,3 @@ htmlcov/
 *.xls
 *.csv
 !apps/api/app/imports/templates/*.csv
-

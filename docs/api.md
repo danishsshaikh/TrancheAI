@@ -10,6 +10,10 @@ Current endpoints:
 - `POST /api/v1/auth/login`
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
+- `POST /api/v1/ai/requests`
+- `GET /api/v1/ai/proposals/{proposal_id}`
+- `POST /api/v1/ai/proposals/{proposal_id}/confirm`
+- `POST /api/v1/ai/proposals/{proposal_id}/cancel`
 - `GET /api/v1/projects`
 - `POST /api/v1/projects`
 - `GET /api/v1/projects/{project_id}`
@@ -53,4 +57,10 @@ Remaining work:
 
 - Add pagination metadata and complete report filters.
 - Add bulk import update support after review rules are specified.
-- Add live AI/STT provider routes when those phases are approved.
+- Validate live Gemma and STT providers on the deployment server.
+
+AI response shapes:
+
+- Assistant requests return `{ kind, message }` plus optional `data`, `download_url` or `proposal`.
+- Write proposals are persisted and must be confirmed through `/api/v1/ai/proposals/{proposal_id}/confirm`.
+- Confirmation responses use the same workflow validation as manual project, tranche and funding routes.

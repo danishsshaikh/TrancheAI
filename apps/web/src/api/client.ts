@@ -66,6 +66,35 @@ export interface ImportBatch {
   rows: ImportRowResult[];
 }
 
+export interface AIProposal {
+  id: string;
+  action: string;
+  status: string;
+  targetEntityType?: string | null;
+  targetEntityId?: string | null;
+  currentValues: Record<string, unknown>;
+  proposedValues: Record<string, unknown>;
+  validationResult?: { valid?: boolean; warnings?: string[]; errors?: string[] };
+  message?: string | null;
+  expiresAt?: string | null;
+  result?: Record<string, unknown>;
+}
+
+export interface AIResponse {
+  kind: "answer" | "proposal" | "clarification" | "error" | "result" | "export";
+  message: string;
+  proposal?: AIProposal;
+  data?: Record<string, unknown> | Array<Record<string, unknown>>;
+  download_url?: string;
+}
+
+export interface AIRequestPayload {
+  text: string;
+  current_project_id?: string;
+  current_project_code?: string;
+  language?: string;
+}
+
 export async function login(email: string, password: string): Promise<AuthSession> {
   const response = await fetch(`${API_BASE}/api/v1/auth/login`, {
     method: "POST",
@@ -142,6 +171,18 @@ export async function previewImport(token: string, importType: string, file: Fil
 
 export async function commitImport(token: string, batchId: string): Promise<ImportBatch> {
   return request<ImportBatch>(`/api/v1/imports/${batchId}/commit`, { token, method: "POST" });
+}
+
+export async function sendAIRequest(token: string, payload: AIRequestPayload): Promise<AIResponse> {
+  return request<AIResponse>("/api/v1/ai/requests", { token, method: "POST", body: payload });
+}
+
+export async function confirmAIProposal(token: string, proposalId: string): Promise<AIResponse> {
+  return request<AIResponse>(`/api/v1/ai/proposals/${proposalId}/confirm`, { token, method: "POST" });
+}
+
+export async function cancelAIProposal(token: string, proposalId: string): Promise<AIResponse> {
+  return request<AIResponse>(`/api/v1/ai/proposals/${proposalId}/cancel`, { token, method: "POST" });
 }
 
 export function exportUrl(path: string) {

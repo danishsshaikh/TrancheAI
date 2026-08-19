@@ -1,10 +1,11 @@
-import { ClipboardList, FileDown, Gauge, Landmark, ListChecks, Search, Settings, WalletCards } from "lucide-react";
+import { Bot, ClipboardList, FileDown, Gauge, Landmark, ListChecks, Search, Settings, WalletCards } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: Gauge },
+  { to: "/ai", label: "AI Assistant", icon: Bot },
   { to: "/projects", label: "Projects", icon: ClipboardList },
   { to: "/tranches/new", label: "Tranches", icon: WalletCards },
   { to: "/reconciliation", label: "Reconciliation", icon: ListChecks },

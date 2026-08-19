@@ -1,12 +1,11 @@
 # Licensing Decision
 
-No project license has been selected yet.
+TrancheAI is licensed under the Apache License 2.0.
 
-Reasonable options for the project owner to evaluate:
+Rationale:
 
-- MIT: permissive, simple, widely used.
-- Apache-2.0: permissive with explicit patent language.
-- AGPL-3.0: copyleft license often considered for networked open-source applications.
+- It is permissive and compatible with open-source distribution.
+- It includes explicit patent-license language.
+- It allows private or commercial deployments while preserving license and notice requirements.
 
-This repository should not be described as released under any license until a `LICENSE` file is added by the project owner.
-
+The canonical license text is in the repository root at [LICENSE](../LICENSE).
