@@ -53,7 +53,30 @@ from app.services.workflow import (
 
 PROPOSAL_TTL_MINUTES = 15
 FORBIDDEN_KEYS = {"sql", "raw_sql", "query_sql", "method", "function", "python", "filesystem_path", "doctype", "import_path"}
-PROJECT_UPDATE_FIELDS = {"title", "institution", "school", "department", "academic_year", "cohort", "expected_completion_date", "project_status", "remarks"}
+PROJECT_UPDATE_FIELDS = {
+    "title",
+    "short_title",
+    "description",
+    "institution",
+    "school",
+    "department",
+    "academic_year",
+    "cohort",
+    "category",
+    "domain",
+    "technology_readiness_level",
+    "prototype_status",
+    "publication_status",
+    "patent_status",
+    "startup_status",
+    "start_date",
+    "expected_completion_date",
+    "actual_completion_date",
+    "project_status",
+    "funding_status",
+    "closure_notes",
+    "remarks",
+}
 TRANSACTION_TYPES = {item.value for item in TransactionType}
 PROJECT_STATUSES = {item.value for item in ProjectStatus}
 ResponseKind = Literal["answer", "proposal", "clarification", "error", "result", "export"]

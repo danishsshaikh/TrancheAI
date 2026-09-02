@@ -22,29 +22,38 @@ from app.exports.xlsx_export import project_master_xlsx, tranche_register_xlsx
 from app.imports.csv_importer import template_csv
 from app.imports.workflow import commit_import_batch, create_import_preview, import_batch_payload, import_row_payload
 from app.models.domain import (
+    AIConversationModel,
+    AIMessageModel,
     AuditEventModel,
     AuthSessionModel,
     FundingRevisionModel,
     FundingSanctionModel,
     ImportBatchModel,
     ProjectModel,
+    ProjectParticipantModel,
     TrancheModel,
     UserModel,
 )
 from app.schemas.domain import (
+    AIConversationCreate,
+    AIConversationMessageCreate,
+    AIConversationUpdate,
     AmountAction,
     DisbursementCreate,
     LoginRequest,
     LoginResponse,
     ProjectCreate,
+    ProjectParticipantInput,
     ProjectUpdate,
     RevisionCreate,
     SanctionCreate,
     StatusAction,
     TrancheCreate,
+    UserCreate,
+    UserUpdate,
 )
 from app.services.financials import calculate_project_financials
-from app.services.security import hash_token, new_token, verify_password
+from app.services.security import hash_password, hash_token, new_token, verify_password
 from app.services.workflow import (
     WorkflowError,
     approve_revision,
@@ -129,8 +138,78 @@ def logout(
 
 
 @router.get("/auth/me")
-def me(user: UserModel = Depends(_current_user)) -> dict[str, str]:
+def me(user: UserModel = Depends(_current_user)) -> dict[str, object]:
     return _user_payload(user)
+
+
+@router.get("/settings")
+def settings_payload(user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    return {
+        "profile": _user_payload(user),
+        "roles": [{"value": role.value, "label": _label(role.value)} for role in Role],
+        "ai": {
+            "enabled": settings.ai_enabled,
+            "baseUrlConfigured": bool(settings.ai_base_url),
+            "modelConfigured": bool(settings.ai_model),
+            "model": settings.ai_model or None,
+            "timeoutSeconds": settings.ai_timeout_seconds,
+            "maxTokens": settings.ai_max_tokens,
+            "temperature": settings.ai_temperature,
+        },
+        "application": {"name": settings.app_name, "version": "0.1.0", "license": "Apache-2.0"},
+    }
+
+
+@router.get("/users")
+def list_users(session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> list[dict[str, object]]:
+    _require(user, "user_admin")
+    return [_user_payload(item) for item in session.scalars(select(UserModel).order_by(UserModel.email))]
+
+
+@router.post("/users", status_code=status.HTTP_201_CREATED)
+def create_user_route(payload: UserCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    _require(user, "user_admin")
+    role = _role_or_400(payload.role)
+    created = UserModel(id=uuid(), email=payload.email.lower(), full_name=payload.full_name, password_hash=hash_password(payload.password), role=role.value)
+    session.add(created)
+    audit(session, actor=user, entity_type="user", entity_id=created.id, action="create_user", new={"email": created.email, "role": created.role})
+    return _commit_payload(session, lambda: _user_payload(created))
+
+
+@router.patch("/users/{user_id}")
+def update_user_route(user_id: str, payload: UserUpdate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    _require(user, "user_admin")
+    target = session.get(UserModel, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    previous = {"full_name": target.full_name, "role": target.role, "is_active": target.is_active}
+    if payload.full_name is not None:
+        target.full_name = payload.full_name
+    if payload.role is not None:
+        target.role = _role_or_400(payload.role).value
+    if payload.is_active is not None:
+        if target.id == user.id and payload.is_active is False:
+            raise HTTPException(status_code=400, detail="You cannot deactivate your own account.")
+        target.is_active = payload.is_active
+    target.version += 1
+    audit(session, actor=user, entity_type="user", entity_id=target.id, action="update_user", previous=previous, new={"full_name": target.full_name, "role": target.role, "is_active": target.is_active})
+    return _commit_payload(session, lambda: _user_payload(target))
+
+
+@router.get("/search")
+def global_search(q: str = Query(min_length=1), session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> list[dict[str, object]]:
+    _require(user, "read")
+    needle = f"%{q.strip()}%"
+    results: list[dict[str, object]] = []
+    for project in session.scalars(select(ProjectModel).where(or_(ProjectModel.project_code.ilike(needle), ProjectModel.title.ilike(needle), ProjectModel.department.ilike(needle))).order_by(ProjectModel.project_code).limit(8)):
+        results.append({"type": "project", "label": f"{project.project_code} · {project.title}", "description": project.department or project.school, "to": f"/projects/{project.id}", "projectId": project.id})
+    tranches = session.scalars(select(TrancheModel).where(TrancheModel.payment_reference.ilike(needle)).order_by(TrancheModel.created_at.desc()).limit(8))
+    for tranche in tranches:
+        project_for_tranche = session.get(ProjectModel, tranche.project_id)
+        if project_for_tranche is None:
+            continue
+        results.append({"type": "tranche", "label": f"{project_for_tranche.project_code} · Tranche {tranche.sequence_number}", "description": tranche.payment_reference, "to": f"/projects/{project_for_tranche.id}/tranches", "projectId": project_for_tranche.id, "trancheId": tranche.id})
+    return results[:12]
 
 
 @router.post("/ai/requests")
@@ -142,6 +221,82 @@ def create_ai_request(payload: AIRequestPayload, session: Session = Depends(get_
         current_project_code=payload.current_project_code,
         language=payload.language,
     )
+
+
+@router.get("/ai/conversations")
+def list_ai_conversations(session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> list[dict[str, object]]:
+    return [
+        _conversation_payload(session, conversation, include_messages=False)
+        for conversation in session.scalars(
+            select(AIConversationModel)
+            .where(AIConversationModel.user_id == user.id, AIConversationModel.archived.is_(False))
+            .order_by(AIConversationModel.updated_at.desc())
+        )
+    ]
+
+
+@router.post("/ai/conversations", status_code=status.HTTP_201_CREATED)
+def create_ai_conversation(payload: AIConversationCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    project = _project_from_context(session, payload.project_id, payload.project_code)
+    conversation = AIConversationModel(
+        id=uuid(),
+        user_id=user.id,
+        title=payload.title,
+        project_id=project.id if project else None,
+        project_code=project.project_code if project else payload.project_code,
+    )
+    session.add(conversation)
+    session.commit()
+    return _conversation_payload(session, conversation)
+
+
+@router.get("/ai/conversations/{conversation_id}")
+def get_ai_conversation(conversation_id: str, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    return _conversation_payload(session, _conversation_or_404(session, conversation_id, user), include_messages=True)
+
+
+@router.patch("/ai/conversations/{conversation_id}")
+def update_ai_conversation(conversation_id: str, payload: AIConversationUpdate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    conversation = _conversation_or_404(session, conversation_id, user)
+    if payload.title is not None:
+        conversation.title = payload.title.strip()[:255] or conversation.title
+    if payload.archived is not None:
+        conversation.archived = payload.archived
+    conversation.version += 1
+    session.commit()
+    return _conversation_payload(session, conversation, include_messages=True)
+
+
+@router.post("/ai/conversations/{conversation_id}/messages")
+def create_ai_conversation_message(conversation_id: str, payload: AIConversationMessageCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    conversation = _conversation_or_404(session, conversation_id, user)
+    user_message = AIMessageModel(id=uuid(), conversation_id=conversation.id, role="user", content=payload.text)
+    session.add(user_message)
+    if not conversation.title:
+        conversation.title = _conversation_title(payload.text)
+    response = _ai_service(session).request(
+        actor=user,
+        text=payload.text,
+        current_project_id=conversation.project_id,
+        current_project_code=conversation.project_code,
+        language=payload.language,
+    )
+    proposal = response.get("proposal")
+    proposal_id = proposal.get("id") if isinstance(proposal, dict) else None
+    assistant_message = AIMessageModel(
+        id=uuid(),
+        conversation_id=conversation.id,
+        role="assistant",
+        content=str(response["message"]),
+        response_kind=str(response["kind"]),
+        action=str(proposal.get("action")) if isinstance(proposal, dict) and proposal.get("action") else None,
+        metadata_=response,
+        proposal_id=str(proposal_id) if proposal_id else None,
+    )
+    session.add(assistant_message)
+    conversation.version += 1
+    session.commit()
+    return {"conversation": _conversation_payload(session, conversation, include_messages=True), "response": response}
 
 
 @router.get("/ai/proposals/{proposal_id}")
@@ -203,7 +358,8 @@ def list_projects(
 @router.post("/projects", status_code=status.HTTP_201_CREATED)
 def create_project(payload: ProjectCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
-    project = create_project_record(session, user, {"project_code": payload.project_code.strip(), "title": payload.title, "institution": payload.institution, "school": payload.school, "department": payload.department, "academic_year": payload.academic_year, "cohort": payload.cohort, "project_status": payload.project_status, "funding_status": payload.funding_status, "start_date": payload.start_date, "expected_completion_date": payload.expected_completion_date, "remarks": payload.remarks})
+    project = create_project_record(session, user, _project_create_values(payload))
+    _sync_project_participants(session, project, payload.participants, user)
     return _commit_payload(session, lambda: _project_payload(session, project))
 
 
@@ -223,7 +379,10 @@ def update_project(project_id: str, payload: ProjectUpdate, session: Session = D
     _require(user, "write")
     project = _project_or_404(session, project_id)
     try:
-        update_project_fields(session, project, user, payload.model_dump(exclude_unset=True, exclude={"version"}), payload.version)
+        values = payload.model_dump(exclude_unset=True, exclude={"version", "participants"})
+        update_project_fields(session, project, user, values, payload.version)
+        if payload.participants is not None:
+            _sync_project_participants(session, project, payload.participants, user)
     except WorkflowError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return _commit_payload(session, lambda: _project_payload(session, project))
@@ -299,7 +458,7 @@ def list_revisions(project_id: str, session: Session = Depends(get_session), use
 def create_revision(project_id: str, payload: RevisionCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
     _require(user, "write")
     project = _project_or_404(session, project_id)
-    revision = create_funding_revision_record(session, project, user, {"revision_number": payload.revision_number, "revision_type": payload.revision_type, "revision_date": payload.revision_date, "amount": payload.amount, "reason": payload.reason})
+    revision = create_funding_revision_record(session, project, user, {"revision_number": payload.revision_number, "revision_type": payload.revision_type, "revision_date": payload.revision_date, "amount": payload.amount, "approval_reference": payload.approval_reference, "reason": payload.reason, "remarks": payload.remarks})
     return _commit_payload(session, lambda: _revision_payload(revision), status.HTTP_400_BAD_REQUEST)
 
 
@@ -333,7 +492,7 @@ def create_tranche(project_id: str, payload: TrancheCreate, session: Session = D
     _require(user, "write")
     project = _project_or_404(session, project_id)
     try:
-        tranche = create_tranche_record(session, project, user, {"sequence_number": payload.sequence_number, "transaction_type": payload.transaction_type, "requested_amount": payload.requested_amount, "approved_amount": payload.approved_amount, "request_date": payload.request_date, "payment_reference": payload.payment_reference, "remarks": payload.remarks})
+        tranche = create_tranche_record(session, project, user, {"sequence_number": payload.sequence_number, "transaction_type": payload.transaction_type, "purchase_order_number": payload.purchase_order_number, "purchase_order_received_date": payload.purchase_order_received_date, "request_date": payload.request_date, "requested_amount": payload.requested_amount, "approved_amount": payload.approved_amount, "approval_date": payload.approval_date, "expected_disbursement_date": payload.expected_disbursement_date, "actual_disbursement_date": payload.actual_disbursement_date, "payment_mode": payload.payment_mode, "payment_reference": payload.payment_reference, "bill_status": payload.bill_status, "utilization_certificate_status": payload.utilization_certificate_status, "remarks": payload.remarks})
     except WorkflowError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _commit_payload(session, lambda: _tranche_payload(tranche), status.HTTP_400_BAD_REQUEST)
@@ -345,7 +504,10 @@ def list_tranches(status_filter: str | None = Query(default=None, alias="status"
     statement = select(TrancheModel).order_by(TrancheModel.created_at.desc())
     if status_filter:
         statement = statement.where(TrancheModel.status == status_filter)
-    return [_tranche_payload(item) for item in session.scalars(statement)]
+    rows: list[dict[str, object]] = []
+    for tranche in session.scalars(statement):
+        rows.append(_tranche_payload(tranche, session.get(ProjectModel, tranche.project_id)))
+    return rows
 
 
 @router.get("/tranches/{tranche_id}")
@@ -541,6 +703,64 @@ def _ai_service(session: Session) -> AIAssistantService:
     )
 
 
+def _conversation_or_404(session: Session, conversation_id: str, user: UserModel) -> AIConversationModel:
+    conversation = session.get(AIConversationModel, conversation_id)
+    if conversation is None or conversation.user_id != user.id:
+        raise HTTPException(status_code=404, detail="AI conversation not found.")
+    return conversation
+
+
+def _conversation_payload(session: Session, conversation: AIConversationModel, *, include_messages: bool = True) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "id": conversation.id,
+        "title": conversation.title or "New conversation",
+        "projectId": conversation.project_id,
+        "projectCode": conversation.project_code,
+        "archived": conversation.archived,
+        "createdAt": conversation.created_at,
+        "updatedAt": conversation.updated_at,
+    }
+    if include_messages:
+        messages = session.scalars(select(AIMessageModel).where(AIMessageModel.conversation_id == conversation.id).order_by(AIMessageModel.created_at))
+        payload["messages"] = [_message_payload(message) for message in messages]
+    return payload
+
+
+def _message_payload(message: AIMessageModel) -> dict[str, object]:
+    return {
+        "id": message.id,
+        "conversationId": message.conversation_id,
+        "role": message.role,
+        "content": message.content,
+        "responseKind": message.response_kind,
+        "action": message.action,
+        "metadata": message.metadata_,
+        "proposalId": message.proposal_id,
+        "createdAt": message.created_at,
+    }
+
+
+def _project_from_context(session: Session, project_id: str | None, project_code: str | None) -> ProjectModel | None:
+    if project_id:
+        project = session.get(ProjectModel, project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project context not found.")
+        return project
+    if project_code:
+        project = session.scalar(select(ProjectModel).where(ProjectModel.project_code == project_code.strip().upper()))
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project context not found.")
+        return project
+    return None
+
+
+def _conversation_title(text: str) -> str:
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= 72:
+        return collapsed or "New conversation"
+    return f"{collapsed[:69]}..."
+
+
 def _require(user: UserModel, action: str) -> None:
     role = Role(user.role)
     allowed = {
@@ -549,6 +769,7 @@ def _require(user: UserModel, action: str) -> None:
         "approve": {Role.ADMINISTRATOR, Role.FUND_REVIEWER},
         "audit_read": {Role.ADMINISTRATOR, Role.AUDITOR},
         "export": {Role.ADMINISTRATOR, Role.FUND_ADMINISTRATOR, Role.FUND_REVIEWER, Role.AUDITOR, Role.VIEWER},
+        "user_admin": {Role.ADMINISTRATOR},
     }
     if role not in allowed[action]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Role {user.role} cannot {action}.")
@@ -600,6 +821,42 @@ def _import_batch_or_404(session: Session, batch_id: str) -> ImportBatchModel:
     return batch
 
 
+def _role_or_400(value: str) -> Role:
+    try:
+        return Role(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid role.") from exc
+
+
+def _project_create_values(payload: ProjectCreate) -> dict[str, object]:
+    return payload.model_dump(exclude={"participants"}, exclude_none=True) | {"project_code": payload.project_code.strip().upper()}
+
+
+def _sync_project_participants(session: Session, project: ProjectModel, participants: list[ProjectParticipantInput], actor: UserModel) -> None:
+    existing = list(session.scalars(select(ProjectParticipantModel).where(ProjectParticipantModel.project_id == project.id)))
+    previous = [_participant_payload(item) for item in existing]
+    for item in existing:
+        session.delete(item)
+    for participant in participants:
+        session.add(
+            ProjectParticipantModel(
+                id=uuid(),
+                project_id=project.id,
+                role=participant.role,
+                full_name=participant.full_name,
+                email=participant.email,
+                phone=participant.phone,
+                department=participant.department,
+                organization=participant.organization,
+                is_primary=participant.is_primary,
+                start_date=participant.start_date,
+                end_date=participant.end_date,
+                notes=participant.notes,
+            )
+        )
+    audit(session, actor=actor, entity_type="project", entity_id=project.id, action="sync_participants", previous={"participants": previous}, new={"participants": [item.model_dump(mode="json") for item in participants]})
+
+
 def _project_payload(session: Session, project: ProjectModel) -> dict[str, object]:
     _, sanctions, revisions, tranches = project_records(session, project.id)
     summary = calculate_project_financials(sanctions, revisions, tranches)
@@ -608,15 +865,43 @@ def _project_payload(session: Session, project: ProjectModel) -> dict[str, objec
         "projectCode": project.project_code,
         "project_code": project.project_code,
         "title": project.title,
+        "shortTitle": project.short_title,
+        "short_title": project.short_title,
+        "description": project.description,
         "institution": project.institution,
         "school": project.school,
         "department": project.department,
         "academicYear": project.academic_year,
         "academic_year": project.academic_year,
         "cohort": project.cohort,
+        "category": project.category,
+        "domain": project.domain,
+        "technologyReadinessLevel": project.technology_readiness_level,
+        "technology_readiness_level": project.technology_readiness_level,
+        "prototypeStatus": project.prototype_status,
+        "prototype_status": project.prototype_status,
+        "publicationStatus": project.publication_status,
+        "publication_status": project.publication_status,
+        "patentStatus": project.patent_status,
+        "patent_status": project.patent_status,
+        "startupStatus": project.startup_status,
+        "startup_status": project.startup_status,
         "status": project.project_status,
+        "projectStatus": project.project_status,
+        "project_status": project.project_status,
         "fundingStatus": project.funding_status,
+        "funding_status": project.funding_status,
+        "startDate": project.start_date,
+        "start_date": project.start_date,
+        "expectedCompletionDate": project.expected_completion_date,
+        "expected_completion_date": project.expected_completion_date,
+        "actualCompletionDate": project.actual_completion_date,
+        "actual_completion_date": project.actual_completion_date,
+        "closureNotes": project.closure_notes,
+        "closure_notes": project.closure_notes,
+        "remarks": project.remarks,
         "version": project.version,
+        "participants": [_participant_payload(item) for item in sorted(project.participants, key=lambda participant: (not participant.is_primary, participant.full_name))],
         "summary": _summary_payload(summary),
     }
 
@@ -647,24 +932,105 @@ def _camel_summary(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _participant_payload(item: ProjectParticipantModel) -> dict[str, object]:
+    return {
+        "id": item.id,
+        "projectId": item.project_id,
+        "role": item.role,
+        "roleLabel": _label(item.role),
+        "fullName": item.full_name,
+        "email": item.email,
+        "phone": item.phone,
+        "department": item.department,
+        "organization": item.organization,
+        "isPrimary": item.is_primary,
+        "startDate": item.start_date,
+        "endDate": item.end_date,
+        "notes": item.notes,
+    }
+
+
 def _sanction_payload(item: FundingSanctionModel) -> dict[str, object]:
-    return {"id": item.id, "projectId": item.project_id, "sanctionReference": item.sanction_reference, "sanctionDate": item.sanction_date, "amount": str(item.amount), "status": item.status, "approvedBy": item.approved_by, "approvedAt": item.approved_at, "version": item.version}
+    return {
+        "id": item.id,
+        "projectId": item.project_id,
+        "sanctionReference": item.sanction_reference,
+        "sanctionDate": item.sanction_date,
+        "amount": str(item.amount),
+        "fundingSource": item.funding_source,
+        "financialYear": item.financial_year,
+        "status": item.status,
+        "statusLabel": _label(item.status),
+        "approvedBy": item.approved_by,
+        "approvedAt": item.approved_at,
+        "remarks": item.remarks,
+        "version": item.version,
+    }
 
 
 def _revision_payload(item: FundingRevisionModel) -> dict[str, object]:
-    return {"id": item.id, "projectId": item.project_id, "revisionNumber": item.revision_number, "revisionType": item.revision_type, "revisionDate": item.revision_date, "amount": str(item.amount), "status": item.status, "version": item.version}
+    return {
+        "id": item.id,
+        "projectId": item.project_id,
+        "revisionNumber": item.revision_number,
+        "revisionType": item.revision_type,
+        "revisionTypeLabel": _label(item.revision_type),
+        "revisionDate": item.revision_date,
+        "amount": str(item.amount),
+        "approvalReference": item.approval_reference,
+        "reason": item.reason,
+        "status": item.status,
+        "statusLabel": _label(item.status),
+        "approvedBy": item.approved_by,
+        "approvedAt": item.approved_at,
+        "remarks": item.remarks,
+        "version": item.version,
+    }
 
 
-def _tranche_payload(item: TrancheModel) -> dict[str, object]:
-    return {"id": item.id, "projectId": item.project_id, "sequenceNumber": item.sequence_number, "transactionType": item.transaction_type, "requestedAmount": str(item.requested_amount), "approvedAmount": str(item.approved_amount), "disbursedAmount": str(item.disbursed_amount), "refundAmount": str(item.refund_amount), "utilizedAmount": str(item.utilized_amount), "paymentReference": item.payment_reference, "actualDisbursementDate": item.actual_disbursement_date, "status": item.status, "remarks": item.remarks, "version": item.version}
+def _tranche_payload(item: TrancheModel, project: ProjectModel | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "id": item.id,
+        "projectId": item.project_id,
+        "sequenceNumber": item.sequence_number,
+        "transactionType": item.transaction_type,
+        "transactionTypeLabel": _label(item.transaction_type),
+        "purchaseOrderNumber": item.purchase_order_number,
+        "purchaseOrderReceivedDate": item.purchase_order_received_date,
+        "requestDate": item.request_date,
+        "requestedAmount": str(item.requested_amount),
+        "approvedAmount": str(item.approved_amount),
+        "approvalDate": item.approval_date,
+        "expectedDisbursementDate": item.expected_disbursement_date,
+        "actualDisbursementDate": item.actual_disbursement_date,
+        "disbursedAmount": str(item.disbursed_amount),
+        "refundAmount": str(item.refund_amount),
+        "utilizedAmount": str(item.utilized_amount),
+        "paymentMode": item.payment_mode,
+        "paymentReference": item.payment_reference,
+        "billStatus": item.bill_status,
+        "utilizationCertificateStatus": item.utilization_certificate_status,
+        "status": item.status,
+        "statusLabel": _label(item.status),
+        "remarks": item.remarks,
+        "version": item.version,
+    }
+    if project is not None:
+        payload["projectCode"] = project.project_code
+        payload["projectTitle"] = project.title
+    return payload
 
 
 def _audit_payload(item: AuditEventModel) -> dict[str, object]:
     return {"id": item.id, "entityType": item.entity_type, "entityId": item.entity_id, "action": item.action, "actorId": item.actor_id, "timestamp": item.timestamp, "previousValues": item.previous_values, "newValues": item.new_values, "reason": item.reason}
 
 
-def _user_payload(user: UserModel) -> dict[str, str]:
-    return {"id": user.id, "email": user.email, "fullName": user.full_name, "role": user.role}
+def _user_payload(user: UserModel) -> dict[str, object]:
+    return {"id": user.id, "email": user.email, "fullName": user.full_name, "role": user.role, "roleLabel": _label(user.role), "isActive": user.is_active}
+
+
+def _label(value: object) -> str:
+    return str(getattr(value, "value", value) or "").replace("_", " ").title()
 
 
 def _project_export_records(session: Session) -> list[ProjectExportRecord]:

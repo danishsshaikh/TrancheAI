@@ -31,7 +31,7 @@ class AIAssistantUnitTests(unittest.TestCase):
             return ProviderHTTPResult(200, json.dumps({"choices": [{"message": {"content": content}, "finish_reason": "stop"}]}))
 
         provider = OpenAICompatibleProvider(
-            base_url="http://127.0.0.1:3001/v1",
+            base_url="http://ai-provider.test/v1",
             model="server-configured-model",
             api_key="local-key",
             timeout_seconds=15,
@@ -43,7 +43,7 @@ class AIAssistantUnitTests(unittest.TestCase):
         envelope = provider.complete(system_prompt="system", user_text="माझा प्रकल्प दाखवा", context={"current_project_code": "SP-001"})
 
         self.assertEqual(envelope.kind, "answer")
-        self.assertEqual(captured["url"], "http://127.0.0.1:3001/v1/chat/completions")
+        self.assertEqual(captured["url"], "http://ai-provider.test/v1/chat/completions")
         self.assertEqual(captured["payload"]["model"], "server-configured-model")
         self.assertEqual(captured["payload"]["max_tokens"], 256)
         self.assertEqual(captured["headers"]["Authorization"], "Bearer local-key")
@@ -51,7 +51,7 @@ class AIAssistantUnitTests(unittest.TestCase):
 
     def test_openai_compatible_provider_rejects_bad_provider_responses(self) -> None:
         provider = OpenAICompatibleProvider(
-            base_url="http://127.0.0.1:3001/v1",
+            base_url="http://ai-provider.test/v1",
             model="server-configured-model",
             transport=lambda _url, _payload, _headers, _timeout: ProviderHTTPResult(200, json.dumps({"choices": [{"message": {"content": "plain prose"}, "finish_reason": "stop"}]})),
         )
@@ -59,7 +59,7 @@ class AIAssistantUnitTests(unittest.TestCase):
             provider.complete(system_prompt="system", user_text="bad")
 
         truncated = OpenAICompatibleProvider(
-            base_url="http://127.0.0.1:3001/v1",
+            base_url="http://ai-provider.test/v1",
             model="server-configured-model",
             transport=lambda _url, _payload, _headers, _timeout: ProviderHTTPResult(200, json.dumps({"choices": [{"message": {"content": "{}"}, "finish_reason": "length"}]})),
         )
@@ -67,7 +67,7 @@ class AIAssistantUnitTests(unittest.TestCase):
             truncated.complete(system_prompt="system", user_text="bad")
 
         refused = OpenAICompatibleProvider(
-            base_url="http://127.0.0.1:3001/v1",
+            base_url="http://ai-provider.test/v1",
             model="server-configured-model",
             transport=lambda _url, _payload, _headers, _timeout: ProviderHTTPResult(200, json.dumps({"choices": [{"message": {"refusal": "no", "content": "{}"}, "finish_reason": "stop"}]})),
         )
@@ -76,7 +76,7 @@ class AIAssistantUnitTests(unittest.TestCase):
 
     def test_openai_compatible_provider_rejects_unavailable_or_missing_configuration(self) -> None:
         unavailable = OpenAICompatibleProvider(
-            base_url="http://127.0.0.1:3001/v1",
+            base_url="http://ai-provider.test/v1",
             model="server-configured-model",
             transport=lambda _url, _payload, _headers, _timeout: ProviderHTTPResult(503, "{}"),
         )
@@ -86,7 +86,7 @@ class AIAssistantUnitTests(unittest.TestCase):
         with self.assertRaises(AIProviderConfigurationError):
             OpenAICompatibleProvider(base_url="", model="model").complete(system_prompt="system", user_text="bad")
         with self.assertRaises(AIProviderConfigurationError):
-            OpenAICompatibleProvider(base_url="http://127.0.0.1:3001/v1", model="").complete(system_prompt="system", user_text="bad")
+            OpenAICompatibleProvider(base_url="http://ai-provider.test/v1", model="").complete(system_prompt="system", user_text="bad")
 
     def test_service_returns_safe_errors_without_database_access_for_disabled_or_malicious_actions(self) -> None:
         actor = UserModel(id="00000000-0000-0000-0000-000000000001", email="admin@example.test", full_name="Admin", password_hash="x", role=Role.ADMINISTRATOR.value)
@@ -94,7 +94,7 @@ class AIAssistantUnitTests(unittest.TestCase):
             session=cast(Session, object()),
             provider=FakeAIAssistantProvider(AIProviderEnvelope(kind="answer", message="unused")),
             ai_enabled=False,
-            provider_base_url="http://127.0.0.1:3001/v1",
+            provider_base_url="http://ai-provider.test/v1",
             provider_model="server-configured-model",
         )
         self.assertEqual(disabled.request(actor=actor, text="hello")["kind"], "error")
@@ -103,7 +103,7 @@ class AIAssistantUnitTests(unittest.TestCase):
             session=cast(Session, object()),
             provider=FakeAIAssistantProvider(AIProviderEnvelope(kind="proposal", message="bad", action="create_project", arguments={"project_code": "X", "title": "X", "sql": "drop table users"})),
             ai_enabled=True,
-            provider_base_url="http://127.0.0.1:3001/v1",
+            provider_base_url="http://ai-provider.test/v1",
             provider_model="server-configured-model",
         )
         result = forbidden.request(actor=actor, text="bad")
@@ -114,7 +114,7 @@ class AIAssistantUnitTests(unittest.TestCase):
             session=cast(Session, object()),
             provider=FakeAIAssistantProvider(AIProviderEnvelope(kind="proposal", message="bad", action="drop_database", arguments={})),
             ai_enabled=True,
-            provider_base_url="http://127.0.0.1:3001/v1",
+            provider_base_url="http://ai-provider.test/v1",
             provider_model="server-configured-model",
         )
         self.assertEqual(unsupported.request(actor=actor, text="bad")["kind"], "error")

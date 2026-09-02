@@ -279,6 +279,40 @@ class AIProposalModel(TimestampMixin, Base):
     result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
 
+class AIConversationModel(TimestampMixin, Base):
+    __tablename__ = "ai_conversations"
+    __table_args__ = (
+        Index("ix_ai_conversations_user_id", "user_id"),
+        Index("ix_ai_conversations_project_id", "project_id"),
+        Index("ix_ai_conversations_archived", "archived"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(255))
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="SET NULL"))
+    project_code: Mapped[str | None] = mapped_column(String(96))
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class AIMessageModel(Base):
+    __tablename__ = "ai_messages"
+    __table_args__ = (
+        Index("ix_ai_messages_conversation_id", "conversation_id"),
+        Index("ix_ai_messages_created_at", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("ai_conversations.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    response_kind: Mapped[str | None] = mapped_column(String(32))
+    action: Mapped[str | None] = mapped_column(String(96))
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    proposal_id: Mapped[str | None] = mapped_column(ForeignKey("ai_proposals.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AuditEventModel(Base):
     __tablename__ = "audit_events"
 

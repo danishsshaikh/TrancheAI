@@ -10,8 +10,8 @@ TrancheAI is a standalone monorepo.
 - `apps/api/app/services`: domain services for financial calculations, validation, reconciliation, permissions and audit.
 - `apps/api/app/imports`: canonical import templates, normalization and preview.
 - `apps/api/app/exports`: CSV and XLSX export generation.
-- `apps/api/app/ai`: OpenAI-compatible provider integration, structured action registry and persisted confirmation proposals.
+- `apps/api/app/ai`: OpenAI-compatible provider integration, structured action registry, persisted AI conversations and confirmation proposals.
 - `apps/api/app/speech`: STT provider boundary and transcript handling.
-- `apps/web`: React administrative interface.
+- `apps/web`: Vue 3 administrative interface built with Frappe UI.
 
 The financial calculation service is the canonical source for project totals. API routes, reports and exports must call it rather than reimplementing totals.

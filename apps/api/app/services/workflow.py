@@ -260,4 +260,16 @@ def _validate_amounts(tranche: TrancheModel) -> None:
 
 
 def _safe(values: dict) -> dict:
-    return {key: value for key, value in values.items() if key.lower() not in SECRET_KEYS}
+    return {key: _jsonable(value) for key, value in values.items() if key.lower() not in SECRET_KEYS}
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {key: _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    return value

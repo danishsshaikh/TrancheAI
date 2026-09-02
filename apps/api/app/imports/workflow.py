@@ -439,6 +439,7 @@ def _commit_sanction(session: Session, values: dict[str, Any], actor: UserModel)
         remarks=values.get("remarks"),
     )
     session.add(sanction)
+    session.flush()
     audit(session, actor=actor, entity_type="funding_sanction", entity_id=sanction.id, action="create", new={"amount": str(sanction.amount), "source": "import"})
     target = values.get("status") or SanctionStatus.DRAFT.value
     if target in {SanctionStatus.SUBMITTED.value, SanctionStatus.APPROVED.value}:
@@ -466,6 +467,7 @@ def _commit_revision(session: Session, values: dict[str, Any], actor: UserModel)
         remarks=values.get("remarks"),
     )
     session.add(revision)
+    session.flush()
     audit(session, actor=actor, entity_type="funding_revision", entity_id=revision.id, action="create", new={"amount": str(revision.amount), "revision_type": revision.revision_type, "source": "import"})
     target = values.get("status") or SanctionStatus.DRAFT.value
     if target in {SanctionStatus.SUBMITTED.value, SanctionStatus.APPROVED.value}:
@@ -499,6 +501,7 @@ def _commit_tranche(session: Session, values: dict[str, Any], actor: UserModel) 
         remarks=values.get("remarks"),
     )
     session.add(tranche)
+    session.flush()
     audit(session, actor=actor, entity_type="tranche", entity_id=tranche.id, action="create", new={"sequence_number": tranche.sequence_number, "source": "import"})
     target = values.get("tranche_status") or TrancheStatus.DRAFT.value
     if target in {TrancheStatus.SUBMITTED.value, TrancheStatus.APPROVED.value, TrancheStatus.PARTIALLY_DISBURSED.value, TrancheStatus.DISBURSED.value, TrancheStatus.REJECTED.value}:

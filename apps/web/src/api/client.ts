@@ -1,98 +1,23 @@
-import type { ProjectRow, ReconciliationIssue } from "../types/domain";
+import type {
+  AIConversation,
+  AIConversationSendResult,
+  AIResponse,
+  AuditEvent,
+  ImportBatch,
+  ProjectDetail,
+  ProjectRow,
+  ReconciliationIssue,
+  SearchResult,
+  SettingsPayload,
+  TrancheRow,
+  User,
+} from "../types/domain";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
-
-export interface User {
-  id: string;
-  email: string;
-  fullName: string;
-  role: string;
-}
 
 export interface AuthSession {
   accessToken: string;
   user: User;
-}
-
-export interface ProjectDetail extends ProjectRow {
-  sanctions: Array<Record<string, string>>;
-  fundingRevisions: Array<Record<string, string>>;
-  tranches: Array<Record<string, string>>;
-}
-
-export interface AuditEvent {
-  id: string;
-  entityType: string;
-  entityId: string;
-  action: string;
-  actorId?: string | null;
-  timestamp?: string | null;
-  reason?: string | null;
-  previousValues: Record<string, unknown>;
-  newValues: Record<string, unknown>;
-}
-
-export interface ImportRowResult {
-  id: string;
-  rowNumber: number;
-  status: string;
-  proposedAction: string;
-  duplicate: boolean;
-  entityType?: string | null;
-  entityId?: string | null;
-  existingEntityId?: string | null;
-  errors: string[];
-  warnings: string[];
-  rawValues: Record<string, unknown>;
-  normalizedValues: Record<string, unknown>;
-  result: Record<string, unknown>;
-}
-
-export interface ImportBatch {
-  id: string;
-  importType: string;
-  filename: string;
-  status: string;
-  rowsDetected: number;
-  validRows: number;
-  invalidRows: number;
-  duplicateRows: number;
-  existingRecordsMatched: number;
-  proposedCreates: number;
-  proposedUpdates: number;
-  committedRows: number;
-  failedRows: number;
-  skippedRows: number;
-  rows: ImportRowResult[];
-}
-
-export interface AIProposal {
-  id: string;
-  action: string;
-  status: string;
-  targetEntityType?: string | null;
-  targetEntityId?: string | null;
-  currentValues: Record<string, unknown>;
-  proposedValues: Record<string, unknown>;
-  validationResult?: { valid?: boolean; warnings?: string[]; errors?: string[] };
-  message?: string | null;
-  expiresAt?: string | null;
-  result?: Record<string, unknown>;
-}
-
-export interface AIResponse {
-  kind: "answer" | "proposal" | "clarification" | "error" | "result" | "export";
-  message: string;
-  proposal?: AIProposal;
-  data?: Record<string, unknown> | Array<Record<string, unknown>>;
-  download_url?: string;
-}
-
-export interface AIRequestPayload {
-  text: string;
-  current_project_id?: string;
-  current_project_code?: string;
-  language?: string;
 }
 
 export async function login(email: string, password: string): Promise<AuthSession> {
@@ -105,56 +30,93 @@ export async function login(email: string, password: string): Promise<AuthSessio
   return { accessToken: body.access_token, user: body.user };
 }
 
-export async function currentUser(token: string): Promise<User> {
-  return request<User>("/api/v1/auth/me", { token });
+export function logout(token: string): Promise<{ status: string }> {
+  return request("/api/v1/auth/logout", { token, method: "POST" });
 }
 
-export async function fetchProjects(token: string, params: URLSearchParams = new URLSearchParams()): Promise<ProjectRow[]> {
-  return request<ProjectRow[]>(`/api/v1/projects?${params.toString()}`, { token });
+export function currentUser(token: string): Promise<User> {
+  return request("/api/v1/auth/me", { token });
 }
 
-export async function createProject(token: string, payload: Record<string, unknown>): Promise<ProjectRow> {
-  return request<ProjectRow>("/api/v1/projects", { token, method: "POST", body: payload });
+export function fetchSettings(token: string): Promise<SettingsPayload> {
+  return request("/api/v1/settings", { token });
 }
 
-export async function fetchProject(token: string, projectId: string): Promise<ProjectDetail> {
-  return request<ProjectDetail>(`/api/v1/projects/${projectId}`, { token });
+export function fetchUsers(token: string): Promise<User[]> {
+  return request("/api/v1/users", { token });
 }
 
-export async function updateProject(token: string, projectId: string, payload: Record<string, unknown>): Promise<ProjectRow> {
-  return request<ProjectRow>(`/api/v1/projects/${projectId}`, { token, method: "PATCH", body: payload });
+export function createUser(token: string, payload: Record<string, unknown>): Promise<User> {
+  return request("/api/v1/users", { token, method: "POST", body: payload });
 }
 
-export async function fetchProjectAudit(token: string, projectId: string): Promise<AuditEvent[]> {
-  return request<AuditEvent[]>(`/api/v1/projects/${projectId}/audit`, { token });
+export function updateUser(token: string, userId: string, payload: Record<string, unknown>): Promise<User> {
+  return request(`/api/v1/users/${userId}`, { token, method: "PATCH", body: payload });
 }
 
-export async function fetchReconciliation(token: string): Promise<ReconciliationIssue[]> {
-  return request<ReconciliationIssue[]>("/api/v1/reports/reconciliation", { token });
+export function globalSearch(token: string, query: string): Promise<SearchResult[]> {
+  return request(`/api/v1/search?q=${encodeURIComponent(query)}`, { token });
 }
 
-export async function createSanction(token: string, projectId: string, payload: Record<string, unknown>) {
-  return request<Record<string, string>>(`/api/v1/projects/${projectId}/sanctions`, { token, method: "POST", body: payload });
+export function fetchProjects(token: string, params: URLSearchParams = new URLSearchParams()): Promise<ProjectRow[]> {
+  const query = params.toString();
+  return request(`/api/v1/projects${query ? `?${query}` : ""}`, { token });
 }
 
-export async function approveSanction(token: string, sanctionId: string) {
-  return request<Record<string, string>>(`/api/v1/sanctions/${sanctionId}/approve`, { token, method: "POST" });
+export function createProject(token: string, payload: Record<string, unknown>): Promise<ProjectRow> {
+  return request("/api/v1/projects", { token, method: "POST", body: payload });
 }
 
-export async function createRevision(token: string, projectId: string, payload: Record<string, unknown>) {
-  return request<Record<string, string>>(`/api/v1/projects/${projectId}/funding-revisions`, { token, method: "POST", body: payload });
+export function fetchProject(token: string, projectId: string): Promise<ProjectDetail> {
+  return request(`/api/v1/projects/${projectId}`, { token });
 }
 
-export async function approveRevision(token: string, revisionId: string) {
-  return request<Record<string, string>>(`/api/v1/funding-revisions/${revisionId}/approve`, { token, method: "POST" });
+export function updateProject(token: string, projectId: string, payload: Record<string, unknown>): Promise<ProjectRow> {
+  return request(`/api/v1/projects/${projectId}`, { token, method: "PATCH", body: payload });
 }
 
-export async function createTranche(token: string, projectId: string, payload: Record<string, unknown>) {
-  return request<Record<string, string>>(`/api/v1/projects/${projectId}/tranches`, { token, method: "POST", body: payload });
+export function fetchProjectAudit(token: string, projectId: string): Promise<AuditEvent[]> {
+  return request(`/api/v1/projects/${projectId}/audit`, { token });
 }
 
-export async function trancheAction(token: string, trancheId: string, action: string, payload?: Record<string, unknown>) {
-  return request<Record<string, string>>(`/api/v1/tranches/${trancheId}/${action}`, { token, method: "POST", body: payload });
+export function createSanction(token: string, projectId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request(`/api/v1/projects/${projectId}/sanctions`, { token, method: "POST", body: payload });
+}
+
+export function submitSanction(token: string, sanctionId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/sanctions/${sanctionId}/submit`, { token, method: "POST" });
+}
+
+export function approveSanction(token: string, sanctionId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/sanctions/${sanctionId}/approve`, { token, method: "POST" });
+}
+
+export function createRevision(token: string, projectId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request(`/api/v1/projects/${projectId}/funding-revisions`, { token, method: "POST", body: payload });
+}
+
+export function submitRevision(token: string, revisionId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/funding-revisions/${revisionId}/submit`, { token, method: "POST" });
+}
+
+export function approveRevision(token: string, revisionId: string): Promise<Record<string, unknown>> {
+  return request(`/api/v1/funding-revisions/${revisionId}/approve`, { token, method: "POST" });
+}
+
+export function createTranche(token: string, projectId: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request(`/api/v1/projects/${projectId}/tranches`, { token, method: "POST", body: payload });
+}
+
+export function fetchTranches(token: string): Promise<TrancheRow[]> {
+  return request("/api/v1/tranches", { token });
+}
+
+export function trancheAction(token: string, trancheId: string, action: string, payload?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return request(`/api/v1/tranches/${trancheId}/${action}`, { token, method: "POST", body: payload });
+}
+
+export function fetchReconciliation(token: string): Promise<ReconciliationIssue[]> {
+  return request("/api/v1/reports/reconciliation", { token });
 }
 
 export async function previewImport(token: string, importType: string, file: File): Promise<ImportBatch> {
@@ -169,24 +131,36 @@ export async function previewImport(token: string, importType: string, file: Fil
   return parseResponse(response) as Promise<ImportBatch>;
 }
 
-export async function commitImport(token: string, batchId: string): Promise<ImportBatch> {
-  return request<ImportBatch>(`/api/v1/imports/${batchId}/commit`, { token, method: "POST" });
+export function commitImport(token: string, batchId: string): Promise<ImportBatch> {
+  return request(`/api/v1/imports/${batchId}/commit`, { token, method: "POST" });
 }
 
-export async function sendAIRequest(token: string, payload: AIRequestPayload): Promise<AIResponse> {
-  return request<AIResponse>("/api/v1/ai/requests", { token, method: "POST", body: payload });
+export function listAIConversations(token: string): Promise<AIConversation[]> {
+  return request("/api/v1/ai/conversations", { token });
 }
 
-export async function confirmAIProposal(token: string, proposalId: string): Promise<AIResponse> {
-  return request<AIResponse>(`/api/v1/ai/proposals/${proposalId}/confirm`, { token, method: "POST" });
+export function createAIConversation(token: string, payload: Record<string, unknown>): Promise<AIConversation> {
+  return request("/api/v1/ai/conversations", { token, method: "POST", body: payload });
 }
 
-export async function cancelAIProposal(token: string, proposalId: string): Promise<AIResponse> {
-  return request<AIResponse>(`/api/v1/ai/proposals/${proposalId}/cancel`, { token, method: "POST" });
+export function fetchAIConversation(token: string, conversationId: string): Promise<AIConversation> {
+  return request(`/api/v1/ai/conversations/${conversationId}`, { token });
 }
 
-export function exportUrl(path: string) {
-  return `${API_BASE}${path}`;
+export function updateAIConversation(token: string, conversationId: string, payload: Record<string, unknown>): Promise<AIConversation> {
+  return request(`/api/v1/ai/conversations/${conversationId}`, { token, method: "PATCH", body: payload });
+}
+
+export function sendAIConversationMessage(token: string, conversationId: string, text: string, language?: string): Promise<AIConversationSendResult> {
+  return request(`/api/v1/ai/conversations/${conversationId}/messages`, { token, method: "POST", body: { text, language } });
+}
+
+export function confirmAIProposal(token: string, proposalId: string): Promise<AIResponse> {
+  return request(`/api/v1/ai/proposals/${proposalId}/confirm`, { token, method: "POST" });
+}
+
+export function cancelAIProposal(token: string, proposalId: string): Promise<AIResponse> {
+  return request(`/api/v1/ai/proposals/${proposalId}/cancel`, { token, method: "POST" });
 }
 
 export async function downloadFile(token: string, path: string, filename: string) {
@@ -216,7 +190,8 @@ async function parseResponse(response: Response) {
   const text = await response.text();
   const body = text ? JSON.parse(text) : {};
   if (!response.ok) {
-    throw new Error(body.detail ?? `Request failed with ${response.status}`);
+    const detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+    throw new Error(detail || `Request failed with ${response.status}`);
   }
   return body;
 }

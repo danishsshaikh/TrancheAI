@@ -22,6 +22,8 @@ from app.db.session import SessionLocal
 from app.imports.csv_importer import PROJECT_HEADERS, REVISION_HEADERS, SANCTION_HEADERS, TRANCHE_HEADERS
 from app.main import app
 from app.models.domain import (
+    AIConversationModel,
+    AIMessageModel,
     AIProposalModel,
     AuditEventModel,
     AuthSessionModel,
@@ -41,12 +43,12 @@ from app.services.workflow import uuid
 @pytest.fixture(autouse=True)
 def clean_database():
     with SessionLocal() as session:
-        for model in [AuditEventModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
+        for model in [AuditEventModel, AIMessageModel, AIConversationModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))
         session.commit()
     yield
     with SessionLocal() as session:
-        for model in [AuditEventModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
+        for model in [AuditEventModel, AIMessageModel, AIConversationModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))
         session.commit()
 
@@ -99,7 +101,7 @@ def fake_ai_service(envelope: AIProviderEnvelope) -> Callable[[Session], AIAssis
             session=session,
             provider=FakeAIAssistantProvider(envelope),
             ai_enabled=True,
-            provider_base_url="http://127.0.0.1:3001/v1",
+            provider_base_url="http://ai-provider.test/v1",
             provider_model="server-configured-model",
         )
 
@@ -126,14 +128,20 @@ def test_authenticated_database_backed_fund_workflow(client: TestClient) -> None
         json={
             "project_code": "TRAI-DB-001",
             "title": "Database Vertical Slice प्रकल्प",
+            "short_title": "Vertical Slice",
+            "description": "Project metadata should survive edits and detail payloads.",
             "school": "Engineering",
             "department": "Mechanical",
             "academic_year": "2026-27",
+            "domain": "Robotics",
             "project_status": "active",
+            "participants": [{"role": "principal_investigator", "full_name": "Dr Vertical", "email": "pi@example.test", "is_primary": True}],
         },
     )
     assert project_response.status_code == 201, project_response.text
     project_id = project_response.json()["id"]
+    assert project_response.json()["shortTitle"] == "Vertical Slice"
+    assert project_response.json()["participants"][0]["fullName"] == "Dr Vertical"
 
     duplicate_response = client.post(
         "/api/v1/projects",
@@ -166,7 +174,7 @@ def test_authenticated_database_backed_fund_workflow(client: TestClient) -> None
     tranche_1 = client.post(
         f"/api/v1/projects/{project_id}/tranches",
         headers=fund_headers,
-        json={"sequence_number": 1, "transaction_type": "advance", "requested_amount": "60000.00", "approved_amount": "60000.00"},
+        json={"sequence_number": 1, "transaction_type": "advance", "requested_amount": "60000.00", "approved_amount": "60000.00", "purchase_order_number": "PO-001", "bill_status": "received"},
     )
     assert tranche_1.status_code == 201, tranche_1.text
     tranche_1_id = tranche_1.json()["id"]
@@ -217,6 +225,10 @@ def test_authenticated_database_backed_fund_workflow(client: TestClient) -> None
         assert session.scalar(select(ProjectModel).where(ProjectModel.project_code == "TRAI-DB-001")) is not None
         assert session.scalar(select(AuditEventModel).where(AuditEventModel.action == "record_disbursement")) is not None
 
+    search = client.get("/api/v1/search?q=UTR-DB-001", headers=viewer_headers)
+    assert search.status_code == 200
+    assert search.json()[0]["type"] == "tranche"
+
     audit_response = client.get(f"/api/v1/projects/{project_id}/audit", headers=admin_headers)
     assert audit_response.status_code == 200
     assert {event["action"] for event in audit_response.json()} >= {"create", "approve", "record_disbursement"}
@@ -242,6 +254,33 @@ def test_authenticated_database_backed_fund_workflow(client: TestClient) -> None
     assert 'mergeCell ref="A1:U1"' in sheet_xml
     assert "TRAI-DB-001" in sheet_xml
     assert "₹#,##0.00" in styles_xml
+
+
+def test_settings_and_user_admin_routes(client: TestClient) -> None:
+    create_user("admin@example.test", Role.ADMINISTRATOR)
+    create_user("viewer@example.test", Role.VIEWER)
+    admin_headers = login(client, "admin@example.test")
+    viewer_headers = login(client, "viewer@example.test")
+
+    settings_response = client.get("/api/v1/settings", headers=viewer_headers)
+    assert settings_response.status_code == 200
+    body = settings_response.json()
+    assert body["application"]["license"] == "Apache-2.0"
+    assert "baseUrl" not in body["ai"]
+    assert "apiKey" not in body["ai"]
+
+    assert client.get("/api/v1/users", headers=viewer_headers).status_code == 403
+    created = client.post(
+        "/api/v1/users",
+        headers=admin_headers,
+        json={"email": "fund-new@example.test", "full_name": "Fund New", "password": "Password123!", "role": "fund_administrator"},
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["id"]
+
+    updated = client.patch(f"/api/v1/users/{user_id}", headers=admin_headers, json={"is_active": False})
+    assert updated.status_code == 200
+    assert updated.json()["isActive"] is False
 
 
 def test_readonly_roles_cannot_modify_records(client: TestClient) -> None:
@@ -298,6 +337,42 @@ def test_ai_create_project_proposal_persists_until_confirmation(client: TestClie
         assert proposal is not None
         assert proposal.status == "executed"
         assert session.scalar(select(AuditEventModel).where(AuditEventModel.action == "confirm_ai_proposal")) is not None
+
+
+def test_ai_conversation_messages_are_persisted(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    create_user("fund@example.test", Role.FUND_ADMINISTRATOR)
+    headers = login(client, "fund@example.test")
+    project = client.post("/api/v1/projects", headers=headers, json={"project_code": "TRAI-CHAT-001", "title": "Chat context"})
+    assert project.status_code == 201, project.text
+
+    envelope = AIProviderEnvelope(kind="answer", message="The project is in draft funding workflow.")
+    monkeypatch.setattr(api_routes, "_ai_service", fake_ai_service(envelope))
+
+    conversation = client.post(
+        "/api/v1/ai/conversations",
+        headers=headers,
+        json={"project_id": project.json()["id"]},
+    )
+    assert conversation.status_code == 201, conversation.text
+    conversation_id = conversation.json()["id"]
+
+    response = client.post(
+        f"/api/v1/ai/conversations/{conversation_id}/messages",
+        headers=headers,
+        json={"text": "What is the next fund action?"},
+    )
+    assert response.status_code == 200, response.text
+    messages = response.json()["conversation"]["messages"]
+    assert [message["role"] for message in messages] == ["user", "assistant"]
+    assert messages[1]["content"] == "The project is in draft funding workflow."
+
+    history = client.get(f"/api/v1/ai/conversations/{conversation_id}", headers=headers)
+    assert history.status_code == 200
+    assert len(history.json()["messages"]) == 2
+
+    with SessionLocal() as session:
+        assert session.scalar(select(AIConversationModel).where(AIConversationModel.id == conversation_id)) is not None
+        assert len(list(session.scalars(select(AIMessageModel).where(AIMessageModel.conversation_id == conversation_id)))) == 2
 
 
 def test_ai_rejects_forbidden_update_fields_and_viewer_writes(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

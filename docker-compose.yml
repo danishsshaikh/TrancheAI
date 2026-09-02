@@ -21,7 +21,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://trancheai:change-me@db:5432/trancheai}
       AI_ENABLED: ${AI_ENABLED:-false}
-      AI_BASE_URL: ${AI_BASE_URL:-http://127.0.0.1:3001/v1}
+      AI_BASE_URL: ${AI_BASE_URL:-}
       AI_MODEL: ${AI_MODEL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-60}

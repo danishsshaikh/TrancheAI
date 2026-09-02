@@ -1,14 +1,16 @@
 import js from "@eslint/js";
 import globals from "globals";
-import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
+import vue from "eslint-plugin-vue";
+import vueParser from "vue-eslint-parser";
 
 export default [
-  { ignores: ["dist", "node_modules"] },
+  { ignores: ["dist", "node_modules", "*.tsbuildinfo"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
+  ...vue.configs["flat/recommended"],
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["**/*.{ts,vue}"],
     languageOptions: {
       ecmaVersion: 2020,
       sourceType: "module",
@@ -16,12 +18,14 @@ export default [
         ...globals.browser,
         ...globals.es2020,
       },
-    },
-    plugins: {
-      "react-hooks": reactHooks,
+      parser: vueParser,
+      parserOptions: {
+        parser: tseslint.parser,
+        extraFileExtensions: [".vue"],
+      },
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      "vue/multi-word-component-names": "off",
     },
   },
 ];

@@ -1,13 +1,13 @@
 # AI Integration
 
-Status: implementation complete in code; live Gemma endpoint validation pending server execution.
+Status: implementation complete in code; live provider validation pending server execution.
 
-TrancheAI uses an OpenAI-compatible chat completions provider. The expected server endpoint is the NGINX-proxied Gemma service at `http://127.0.0.1:3001/v1`. The application does not call model replica ports directly and does not hardcode a model name.
+TrancheAI uses an OpenAI-compatible chat completions provider configured entirely through environment variables. The application does not call model replica ports directly and does not hardcode a provider URL or model name.
 
 Environment:
 
 - `AI_ENABLED=false`
-- `AI_BASE_URL=http://127.0.0.1:3001/v1`
+- `AI_BASE_URL=`
 - `AI_MODEL=`
 - `AI_API_KEY=`
 - `AI_TIMEOUT_SECONDS=60`
@@ -19,6 +19,7 @@ Implemented backend flow:
 - `POST /api/v1/ai/requests` accepts authenticated assistant requests with optional project context.
 - Provider output must be strict JSON with `kind`, `message`, `action` and `arguments`.
 - Actions are validated against a server-side registry.
+- AI conversations and messages are persisted in `ai_conversations` and `ai_messages`.
 - Forbidden keys such as SQL, Python, dynamic methods and filesystem paths are rejected recursively.
 - Read actions execute immediately when the role has permission.
 - Write actions create rows in `ai_proposals` and do not mutate project data until confirmed.
@@ -40,6 +41,6 @@ Frontend:
 Validation still required on the deployment server:
 
 - Start the real API/web stack and PostgreSQL.
-- Set `AI_ENABLED=true` and the actual `AI_MODEL`.
-- Send read, export and write-proposal requests through the Gemma endpoint.
+- Set `AI_ENABLED=true`, `AI_BASE_URL` and the actual `AI_MODEL`.
+- Send read, export and write-proposal requests through the configured endpoint.
 - Confirm that Marathi and mixed English/Marathi prompts return valid JSON envelopes.

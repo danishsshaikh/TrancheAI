@@ -15,16 +15,14 @@ Implemented local backend tests:
 
 Frontend tests:
 
-- Project table rendering.
-- Empty state.
-- AI assistant answers, proposal confirm/cancel states and disabled-provider handling.
-- Project-detail launch into the assistant with project context.
+- UI formatting utilities for money, empty fields and human labels.
+- Server-side frontend typecheck, unit tests and production build are still required after dependency install.
 
 Server verification required:
 
 - PostgreSQL migration.
 - API persistence.
 - AI proposal persistence, ownership checks, expiry handling and domain-service execution.
-- Live Gemma endpoint at `AI_BASE_URL=http://127.0.0.1:3001/v1`.
+- Live OpenAI-compatible model endpoint through the server-configured `AI_BASE_URL`.
 - Full frontend build.
 - Browser and Playwright workflows.

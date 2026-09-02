@@ -11,7 +11,7 @@ class Settings:
     jwt_secret: str = getenv("JWT_SECRET", "change-this-on-server")
     cors_origins: tuple[str, ...] = tuple(origin.strip() for origin in getenv("CORS_ORIGINS", "http://localhost:3100").split(",") if origin.strip())
     ai_enabled: bool = getenv("AI_ENABLED", "false").lower() == "true"
-    ai_base_url: str = getenv("AI_BASE_URL", "http://127.0.0.1:3001/v1")
+    ai_base_url: str = getenv("AI_BASE_URL", "")
     ai_model: str = getenv("AI_MODEL", "")
     ai_api_key: str = getenv("AI_API_KEY", "")
     ai_timeout_seconds: int = int(getenv("AI_TIMEOUT_SECONDS", "60"))
