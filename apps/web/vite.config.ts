@@ -3,12 +3,15 @@ import frappeui from "frappe-ui/vite";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [vue(), frappeui({ buildConfig: false, frappeProxy: false, jinjaBootData: false })],
+  plugins: [frappeui({ lucideIcons: true, buildConfig: false, frappeProxy: false, jinjaBootData: false }), vue()],
   server: {
     port: Number(process.env.WEB_PORT ?? 3100),
     proxy: {
       "/api": process.env.VITE_API_URL ?? "http://localhost:8100"
     }
+  },
+  optimizeDeps: {
+    exclude: ["frappe-ui"]
   },
   test: {
     environment: "jsdom",
