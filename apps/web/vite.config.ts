@@ -11,7 +11,8 @@ export default defineConfig({
     }
   },
   optimizeDeps: {
-    exclude: ["frappe-ui"]
+    exclude: ["frappe-ui"],
+    include: ["frappe-ui > feather-icons"]
   },
   test: {
     environment: "jsdom",
