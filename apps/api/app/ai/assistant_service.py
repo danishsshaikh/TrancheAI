@@ -33,9 +33,9 @@ from app.models.domain import (
     TrancheModel,
     UserModel,
 )
-from app.services.financials import calculate_project_financials
+from app.services.financials import ProjectFinancialSummary, calculate_project_financials
 from app.services.permissions import Actor, can
-from app.services.reconciliation import reconcile_project
+from app.services.reconciliation import ReconciliationIssue, reconcile_project
 from app.services.workflow import (
     WorkflowError,
     approve_tranche,
@@ -598,7 +598,7 @@ def _approval_capacity(session: Session, project: ProjectModel, excluding_tranch
     return summary.available_sanctioned_balance - summary.pending_approved_amount
 
 
-def _summary_payload(summary) -> dict[str, Any]:
+def _summary_payload(summary: ProjectFinancialSummary) -> dict[str, Any]:
     return {
         "initialSanctionedAmount": str(summary.initial_sanctioned_amount),
         "approvedFundingIncreases": str(summary.approved_funding_increases),
@@ -634,7 +634,7 @@ def _tranche_current_values(tranche: TrancheModel) -> dict[str, Any]:
     }
 
 
-def _reconciliation_payload(issue, project: ProjectModel) -> dict[str, Any]:
+def _reconciliation_payload(issue: ReconciliationIssue, project: ProjectModel) -> dict[str, Any]:
     return {
         "issueType": issue.issue_type,
         "severity": issue.severity,

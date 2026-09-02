@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -39,7 +40,17 @@ def project_summary(session: Session, project_id: str) -> ProjectFinancialSummar
     return calculate_project_financials(sanctions, revisions, tranches)
 
 
-def audit(session: Session, *, actor: UserModel, entity_type: str, entity_id: str, action: str, previous: dict | None = None, new: dict | None = None, reason: str | None = None) -> None:
+def audit(
+    session: Session,
+    *,
+    actor: UserModel,
+    entity_type: str,
+    entity_id: str,
+    action: str,
+    previous: dict[str, Any] | None = None,
+    new: dict[str, Any] | None = None,
+    reason: str | None = None,
+) -> None:
     session.add(
         AuditEventModel(
             id=uuid(),
@@ -259,7 +270,7 @@ def _validate_amounts(tranche: TrancheModel) -> None:
         raise WorkflowError("Utilized amount cannot exceed this tranche's net disbursed amount.")
 
 
-def _safe(values: dict) -> dict:
+def _safe(values: dict[str, Any]) -> dict[str, object]:
     return {key: _jsonable(value) for key, value in values.items() if key.lower() not in SECRET_KEYS}
 
 

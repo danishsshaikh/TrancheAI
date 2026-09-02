@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -236,17 +237,17 @@ class ImportRowModel(Base):
     batch_id: Mapped[str] = mapped_column(ForeignKey("import_batches.id", ondelete="CASCADE"), nullable=False)
     row_number: Mapped[int] = mapped_column(Integer, nullable=False)
     row_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False)
-    raw_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    normalized_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    raw_values: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    normalized_values: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="valid", nullable=False)
     proposed_action: Mapped[str] = mapped_column(String(32), default="create", nullable=False)
     duplicate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     entity_type: Mapped[str | None] = mapped_column(String(64))
     entity_id: Mapped[str | None] = mapped_column(String(128))
     existing_entity_id: Mapped[str | None] = mapped_column(String(128))
-    errors: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    warnings: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    errors: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    warnings: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
     batch: Mapped[ImportBatchModel] = relationship(back_populates="rows")
 
@@ -262,12 +263,12 @@ class AIProposalModel(TimestampMixin, Base):
     id: Mapped[str] = mapped_column(UUID(as_uuid=False), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     action: Mapped[str] = mapped_column(String(96), nullable=False)
-    arguments: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     target_entity_type: Mapped[str | None] = mapped_column(String(64))
     target_entity_id: Mapped[str | None] = mapped_column(String(128))
-    current_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    proposed_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    validation_result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    current_values: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    proposed_values: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    validation_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending_confirmation", nullable=False)
     provider: Mapped[str | None] = mapped_column(String(64))
     model: Mapped[str | None] = mapped_column(String(255))
@@ -276,7 +277,7 @@ class AIProposalModel(TimestampMixin, Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    result: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
 
 
 class AIConversationModel(TimestampMixin, Base):
@@ -308,7 +309,7 @@ class AIMessageModel(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     response_kind: Mapped[str | None] = mapped_column(String(32))
     action: Mapped[str | None] = mapped_column(String(96))
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    metadata_: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     proposal_id: Mapped[str | None] = mapped_column(ForeignKey("ai_proposals.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -322,8 +323,8 @@ class AuditEventModel(Base):
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     actor_id: Mapped[str | None] = mapped_column(String(128))
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    previous_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
-    new_values: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    previous_values: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    new_values: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     request_id: Mapped[str | None] = mapped_column(String(128))

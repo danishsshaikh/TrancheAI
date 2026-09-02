@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import TypeVar
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -52,7 +54,7 @@ from app.schemas.domain import (
     UserCreate,
     UserUpdate,
 )
-from app.services.financials import calculate_project_financials
+from app.services.financials import ProjectFinancialSummary, calculate_project_financials
 from app.services.security import hash_password, hash_token, new_token, verify_password
 from app.services.workflow import (
     WorkflowError,
@@ -83,6 +85,7 @@ from app.services.workflow import (
 
 router = APIRouter(prefix="/api/v1")
 bearer = HTTPBearer(auto_error=False)
+PayloadT = TypeVar("PayloadT")
 
 
 def _current_user(
@@ -214,6 +217,8 @@ def global_search(q: str = Query(min_length=1), session: Session = Depends(get_s
 
 @router.post("/ai/requests")
 def create_ai_request(payload: AIRequestPayload, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    if not settings.ai_enabled:
+        return _ai_disabled_response()
     return _ai_service(session).request(
         actor=user,
         text=payload.text,
@@ -269,6 +274,8 @@ def update_ai_conversation(conversation_id: str, payload: AIConversationUpdate, 
 
 @router.post("/ai/conversations/{conversation_id}/messages")
 def create_ai_conversation_message(conversation_id: str, payload: AIConversationMessageCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
+    if not settings.ai_enabled:
+        return _ai_disabled_response()
     conversation = _conversation_or_404(session, conversation_id, user)
     user_message = AIMessageModel(id=uuid(), conversation_id=conversation.id, role="user", content=payload.text)
     session.add(user_message)
@@ -703,6 +710,10 @@ def _ai_service(session: Session) -> AIAssistantService:
     )
 
 
+def _ai_disabled_response() -> dict[str, object]:
+    return {"kind": "error", "message": "AI assistant is disabled. Set AI_ENABLED=true on the server to use it."}
+
+
 def _conversation_or_404(session: Session, conversation_id: str, user: UserModel) -> AIConversationModel:
     conversation = session.get(AIConversationModel, conversation_id)
     if conversation is None or conversation.user_id != user.id:
@@ -775,7 +786,7 @@ def _require(user: UserModel, action: str) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Role {user.role} cannot {action}.")
 
 
-def _commit_payload(session: Session, payload_factory, integrity_status: int = status.HTTP_409_CONFLICT):
+def _commit_payload(session: Session, payload_factory: Callable[[], PayloadT], integrity_status: int = status.HTTP_409_CONFLICT) -> PayloadT:
     try:
         session.flush()
         payload = payload_factory()
@@ -906,7 +917,7 @@ def _project_payload(session: Session, project: ProjectModel) -> dict[str, objec
     }
 
 
-def _summary_payload(summary) -> dict[str, object]:
+def _summary_payload(summary: ProjectFinancialSummary) -> dict[str, object]:
     payload = asdict(summary)
     return {**{key: str(value) if isinstance(value, Decimal) else value for key, value in payload.items()}, **_camel_summary(payload)}
 
