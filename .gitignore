@@ -12,9 +12,12 @@ htmlcov/
 *.tsbuildinfo
 *.pyc
 *.pyo
+*.egg-info/
 *.sqlite
 *.db
 *.log
+apps/web/auto-imports.d.ts
+apps/web/components.d.ts
 *.xlsx
 *.xls
 *.csv

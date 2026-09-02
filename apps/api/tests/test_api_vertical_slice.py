@@ -41,7 +41,8 @@ from app.services.workflow import uuid
 
 
 @pytest.fixture(autouse=True)
-def clean_database():
+def clean_database(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(api_routes, "_effective_ai_enabled", lambda: False)
     with SessionLocal() as session:
         for model in [AuditEventModel, AIMessageModel, AIConversationModel, AIProposalModel, ImportRowModel, ImportBatchModel, TrancheModel, FundingRevisionModel, FundingSanctionModel, ProjectParticipantModel, ProjectModel, AuthSessionModel, UserModel]:
             session.execute(delete(model))

@@ -341,7 +341,7 @@ const projectIssues = computed(() => {
             ['Start date', dateText(project.startDate)],
             ['Actual completion', dateText(project.actualCompletionDate)],
             ['Closure notes', project.closureNotes],
-          ]" :key="item[0]">
+          ]" :key="String(item[0])">
             <dt class="text-xs text-muted">{{ item[0] }}</dt>
             <dd class="mt-1 text-sm">{{ item[1] || "-" }}</dd>
           </div>
@@ -472,93 +472,103 @@ const projectIssues = computed(() => {
     <div v-else-if="loading" class="text-sm text-muted">Loading project...</div>
     <div v-else class="border border-danger/30 bg-red-50 px-3 py-2 text-sm text-danger">{{ error || "Project not found." }}</div>
 
-    <Dialog v-model:open="projectDialog" title="Edit project" size="3xl">
-      <div class="grid gap-3 md:grid-cols-2">
-        <FormControl v-model="projectForm.title" label="Title" class="md:col-span-2" />
-        <FormControl v-model="projectForm.short_title" label="Short title" />
-        <FormControl v-model="projectForm.academic_year" label="Academic year" />
-        <FormControl v-model="projectForm.institution" label="Institution" />
-        <FormControl v-model="projectForm.school" label="School" />
-        <FormControl v-model="projectForm.department" label="Department" />
-        <FormControl v-model="projectForm.cohort" label="Cohort" />
-        <FormControl v-model="projectForm.category" label="Category" />
-        <FormControl v-model="projectForm.domain" label="Domain" />
-        <FormControl v-model="projectForm.technology_readiness_level" label="Technology readiness" />
-        <FormControl v-model="projectForm.prototype_status" label="Prototype status" />
-        <FormControl v-model="projectForm.publication_status" label="Publication status" />
-        <FormControl v-model="projectForm.patent_status" label="Patent status" />
-        <FormControl v-model="projectForm.startup_status" label="Startup status" />
-        <FormControl v-model="projectForm.project_status" label="Project status" />
-        <FormControl v-model="projectForm.funding_status" label="Funding status" />
-        <FormControl v-model="projectForm.expected_completion_date" label="Expected completion" type="date" />
-        <FormControl v-model="projectForm.description" label="Description" type="textarea" class="md:col-span-2" />
-        <FormControl v-model="projectForm.participants" label="Participants" type="textarea" class="md:col-span-2" />
-      </div>
+    <Dialog v-model="projectDialog" :options="{ title: 'Edit project', size: '3xl' }">
+      <template #body-content>
+        <div class="grid gap-3 md:grid-cols-2">
+          <FormControl v-model="projectForm.title" label="Title" class="md:col-span-2" />
+          <FormControl v-model="projectForm.short_title" label="Short title" />
+          <FormControl v-model="projectForm.academic_year" label="Academic year" />
+          <FormControl v-model="projectForm.institution" label="Institution" />
+          <FormControl v-model="projectForm.school" label="School" />
+          <FormControl v-model="projectForm.department" label="Department" />
+          <FormControl v-model="projectForm.cohort" label="Cohort" />
+          <FormControl v-model="projectForm.category" label="Category" />
+          <FormControl v-model="projectForm.domain" label="Domain" />
+          <FormControl v-model="projectForm.technology_readiness_level" label="Technology readiness" />
+          <FormControl v-model="projectForm.prototype_status" label="Prototype status" />
+          <FormControl v-model="projectForm.publication_status" label="Publication status" />
+          <FormControl v-model="projectForm.patent_status" label="Patent status" />
+          <FormControl v-model="projectForm.startup_status" label="Startup status" />
+          <FormControl v-model="projectForm.project_status" label="Project status" />
+          <FormControl v-model="projectForm.funding_status" label="Funding status" />
+          <FormControl v-model="projectForm.expected_completion_date" label="Expected completion" type="date" />
+          <FormControl v-model="projectForm.description" label="Description" type="textarea" class="md:col-span-2" />
+          <FormControl v-model="projectForm.participants" label="Participants" type="textarea" class="md:col-span-2" />
+        </div>
+      </template>
       <template #actions>
         <Button label="Cancel" @click="projectDialog = false" />
         <Button variant="solid" label="Save" icon-left="save" :loading="saving" @click="saveProject" />
       </template>
     </Dialog>
 
-    <Dialog v-model:open="sanctionDialog" title="Original sanction" size="xl">
-      <div class="grid gap-3 md:grid-cols-2">
-        <FormControl v-model="sanctionForm.sanction_reference" label="Sanction reference" />
-        <FormControl v-model="sanctionForm.amount" label="Amount" type="number" />
-        <FormControl v-model="sanctionForm.sanction_date" label="Sanction date" type="date" />
-        <FormControl v-model="sanctionForm.funding_source" label="Funding source" />
-        <FormControl v-model="sanctionForm.financial_year" label="Financial year" />
-        <FormControl v-model="sanctionForm.remarks" label="Remarks" type="textarea" />
-      </div>
+    <Dialog v-model="sanctionDialog" :options="{ title: 'Original sanction', size: 'xl' }">
+      <template #body-content>
+        <div class="grid gap-3 md:grid-cols-2">
+          <FormControl v-model="sanctionForm.sanction_reference" label="Sanction reference" />
+          <FormControl v-model="sanctionForm.amount" label="Amount" type="number" />
+          <FormControl v-model="sanctionForm.sanction_date" label="Sanction date" type="date" />
+          <FormControl v-model="sanctionForm.funding_source" label="Funding source" />
+          <FormControl v-model="sanctionForm.financial_year" label="Financial year" />
+          <FormControl v-model="sanctionForm.remarks" label="Remarks" type="textarea" />
+        </div>
+      </template>
       <template #actions>
         <Button label="Cancel" @click="sanctionDialog = false" />
         <Button variant="solid" label="Save" icon-left="save" :loading="saving" @click="saveSanction" />
       </template>
     </Dialog>
 
-    <Dialog v-model:open="revisionDialog" title="Funding revision" size="xl">
-      <div class="grid gap-3 md:grid-cols-2">
-        <FormControl v-model="revisionForm.revision_number" label="Revision number" type="number" />
-        <FormControl v-model="revisionForm.revision_type" label="Revision type" />
-        <FormControl v-model="revisionForm.amount" label="Amount" type="number" />
-        <FormControl v-model="revisionForm.revision_date" label="Revision date" type="date" />
-        <FormControl v-model="revisionForm.approval_reference" label="Approval reference" />
-        <FormControl v-model="revisionForm.reason" label="Reason" type="textarea" />
-      </div>
+    <Dialog v-model="revisionDialog" :options="{ title: 'Funding revision', size: 'xl' }">
+      <template #body-content>
+        <div class="grid gap-3 md:grid-cols-2">
+          <FormControl v-model="revisionForm.revision_number" label="Revision number" type="number" />
+          <FormControl v-model="revisionForm.revision_type" label="Revision type" />
+          <FormControl v-model="revisionForm.amount" label="Amount" type="number" />
+          <FormControl v-model="revisionForm.revision_date" label="Revision date" type="date" />
+          <FormControl v-model="revisionForm.approval_reference" label="Approval reference" />
+          <FormControl v-model="revisionForm.reason" label="Reason" type="textarea" />
+        </div>
+      </template>
       <template #actions>
         <Button label="Cancel" @click="revisionDialog = false" />
         <Button variant="solid" label="Save" icon-left="save" :loading="saving" @click="saveRevision" />
       </template>
     </Dialog>
 
-    <Dialog v-model:open="trancheDialog" title="Tranche" size="2xl">
-      <div class="grid gap-3 md:grid-cols-2">
-        <FormControl v-model="trancheForm.sequence_number" label="Sequence number" type="number" />
-        <FormControl v-model="trancheForm.transaction_type" label="Transaction type" />
-        <FormControl v-model="trancheForm.requested_amount" label="Requested amount" type="number" />
-        <FormControl v-model="trancheForm.approved_amount" label="Approved amount" type="number" />
-        <FormControl v-model="trancheForm.request_date" label="Request date" type="date" />
-        <FormControl v-model="trancheForm.approval_date" label="Approval date" type="date" />
-        <FormControl v-model="trancheForm.expected_disbursement_date" label="Expected disbursement" type="date" />
-        <FormControl v-model="trancheForm.purchase_order_number" label="Purchase order" />
-        <FormControl v-model="trancheForm.payment_mode" label="Payment mode" />
-        <FormControl v-model="trancheForm.payment_reference" label="Payment reference" />
-        <FormControl v-model="trancheForm.bill_status" label="Bill status" />
-        <FormControl v-model="trancheForm.utilization_certificate_status" label="Utilization certificate" />
-      </div>
+    <Dialog v-model="trancheDialog" :options="{ title: 'Tranche', size: '2xl' }">
+      <template #body-content>
+        <div class="grid gap-3 md:grid-cols-2">
+          <FormControl v-model="trancheForm.sequence_number" label="Sequence number" type="number" />
+          <FormControl v-model="trancheForm.transaction_type" label="Transaction type" />
+          <FormControl v-model="trancheForm.requested_amount" label="Requested amount" type="number" />
+          <FormControl v-model="trancheForm.approved_amount" label="Approved amount" type="number" />
+          <FormControl v-model="trancheForm.request_date" label="Request date" type="date" />
+          <FormControl v-model="trancheForm.approval_date" label="Approval date" type="date" />
+          <FormControl v-model="trancheForm.expected_disbursement_date" label="Expected disbursement" type="date" />
+          <FormControl v-model="trancheForm.purchase_order_number" label="Purchase order" />
+          <FormControl v-model="trancheForm.payment_mode" label="Payment mode" />
+          <FormControl v-model="trancheForm.payment_reference" label="Payment reference" />
+          <FormControl v-model="trancheForm.bill_status" label="Bill status" />
+          <FormControl v-model="trancheForm.utilization_certificate_status" label="Utilization certificate" />
+        </div>
+      </template>
       <template #actions>
         <Button label="Cancel" @click="trancheDialog = false" />
         <Button variant="solid" label="Save" icon-left="save" :loading="saving" @click="saveTranche" />
       </template>
     </Dialog>
 
-    <Dialog v-model:open="actionDialog" :title="labelize(selectedAction)" size="xl">
-      <div class="grid gap-3 md:grid-cols-2">
-        <FormControl v-if="selectedAction === 'disburse' || selectedAction === 'record-refund' || selectedAction === 'record-utilization'" v-model="actionForm.amount" label="Amount" type="number" />
-        <FormControl v-if="selectedAction === 'disburse'" v-model="actionForm.payment_reference" label="Payment reference" />
-        <FormControl v-if="selectedAction === 'disburse'" v-model="actionForm.payment_date" label="Payment date" type="date" />
-        <FormControl v-if="selectedAction === 'disburse'" v-model="actionForm.payment_mode" label="Payment mode" />
-        <FormControl v-if="selectedAction === 'reject' || selectedAction === 'cancel'" v-model="actionForm.reason" label="Reason" type="textarea" class="md:col-span-2" />
-      </div>
+    <Dialog v-model="actionDialog" :options="{ title: labelize(selectedAction), size: 'xl' }">
+      <template #body-content>
+        <div class="grid gap-3 md:grid-cols-2">
+          <FormControl v-if="selectedAction === 'disburse' || selectedAction === 'record-refund' || selectedAction === 'record-utilization'" v-model="actionForm.amount" label="Amount" type="number" />
+          <FormControl v-if="selectedAction === 'disburse'" v-model="actionForm.payment_reference" label="Payment reference" />
+          <FormControl v-if="selectedAction === 'disburse'" v-model="actionForm.payment_date" label="Payment date" type="date" />
+          <FormControl v-if="selectedAction === 'disburse'" v-model="actionForm.payment_mode" label="Payment mode" />
+          <FormControl v-if="selectedAction === 'reject' || selectedAction === 'cancel'" v-model="actionForm.reason" label="Reason" type="textarea" class="md:col-span-2" />
+        </div>
+      </template>
       <template #actions>
         <Button label="Cancel" @click="actionDialog = false" />
         <Button variant="solid" :label="labelize(selectedAction)" icon-left="check" :loading="saving" @click="runTrancheAction" />

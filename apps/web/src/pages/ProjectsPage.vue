@@ -136,20 +136,22 @@ async function saveProject() {
       </table>
     </section>
 
-    <Dialog v-model:open="dialogOpen" title="New project" size="2xl">
-      <div class="grid gap-3 md:grid-cols-2">
-        <FormControl v-model="form.project_code" label="Project code" required />
-        <FormControl v-model="form.academic_year" label="Academic year" />
-        <FormControl v-model="form.title" label="Title" required class="md:col-span-2" />
-        <FormControl v-model="form.short_title" label="Short title" />
-        <FormControl v-model="form.principal_investigator" label="Principal investigator" />
-        <FormControl v-model="form.school" label="School" />
-        <FormControl v-model="form.department" label="Department" />
-        <FormControl v-model="form.category" label="Category" />
-        <FormControl v-model="form.domain" label="Domain" />
-        <FormControl v-model="form.expected_completion_date" label="Expected completion date" type="date" />
-        <FormControl v-model="form.remarks" label="Remarks" type="textarea" class="md:col-span-2" />
-      </div>
+    <Dialog v-model="dialogOpen" :options="{ title: 'New project', size: '2xl' }">
+      <template #body-content>
+        <div class="grid gap-3 md:grid-cols-2">
+          <FormControl v-model="form.project_code" label="Project code" required />
+          <FormControl v-model="form.academic_year" label="Academic year" />
+          <FormControl v-model="form.title" label="Title" required class="md:col-span-2" />
+          <FormControl v-model="form.short_title" label="Short title" />
+          <FormControl v-model="form.principal_investigator" label="Principal investigator" />
+          <FormControl v-model="form.school" label="School" />
+          <FormControl v-model="form.department" label="Department" />
+          <FormControl v-model="form.category" label="Category" />
+          <FormControl v-model="form.domain" label="Domain" />
+          <FormControl v-model="form.expected_completion_date" label="Expected completion date" type="date" />
+          <FormControl v-model="form.remarks" label="Remarks" type="textarea" class="md:col-span-2" />
+        </div>
+      </template>
       <template #actions>
         <Button label="Cancel" @click="dialogOpen = false" />
         <Button variant="solid" label="Create project" icon-left="save" :loading="saving" @click="saveProject" />

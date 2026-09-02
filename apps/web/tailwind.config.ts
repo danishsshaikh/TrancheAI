@@ -1,9 +1,13 @@
 import type { Config } from "tailwindcss";
-import preset, { content } from "frappe-ui/tailwind";
+import preset from "frappe-ui/tailwind";
 
 export default {
   presets: [preset],
-  content: [...content, "./index.html", "./src/**/*.{ts,vue}"],
+  content: [
+    "./index.html",
+    "./src/**/*.{ts,vue}",
+    "./node_modules/frappe-ui/src/**/*.{js,ts,vue}"
+  ],
   theme: {
     extend: {
       colors: {

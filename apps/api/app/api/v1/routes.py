@@ -217,8 +217,6 @@ def global_search(q: str = Query(min_length=1), session: Session = Depends(get_s
 
 @router.post("/ai/requests")
 def create_ai_request(payload: AIRequestPayload, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
-    if not settings.ai_enabled:
-        return _ai_disabled_response()
     return _ai_service(session).request(
         actor=user,
         text=payload.text,
@@ -274,8 +272,6 @@ def update_ai_conversation(conversation_id: str, payload: AIConversationUpdate, 
 
 @router.post("/ai/conversations/{conversation_id}/messages")
 def create_ai_conversation_message(conversation_id: str, payload: AIConversationMessageCreate, session: Session = Depends(get_session), user: UserModel = Depends(_current_user)) -> dict[str, object]:
-    if not settings.ai_enabled:
-        return _ai_disabled_response()
     conversation = _conversation_or_404(session, conversation_id, user)
     user_message = AIMessageModel(id=uuid(), conversation_id=conversation.id, role="user", content=payload.text)
     session.add(user_message)
@@ -704,14 +700,14 @@ def _ai_service(session: Session) -> AIAssistantService:
     return AIAssistantService(
         session=session,
         provider=provider,
-        ai_enabled=settings.ai_enabled,
+        ai_enabled=_effective_ai_enabled(),
         provider_base_url=settings.ai_base_url,
         provider_model=settings.ai_model,
     )
 
 
-def _ai_disabled_response() -> dict[str, object]:
-    return {"kind": "error", "message": "AI assistant is disabled. Set AI_ENABLED=true on the server to use it."}
+def _effective_ai_enabled() -> bool:
+    return settings.ai_enabled
 
 
 def _conversation_or_404(session: Session, conversation_id: str, user: UserModel) -> AIConversationModel:
