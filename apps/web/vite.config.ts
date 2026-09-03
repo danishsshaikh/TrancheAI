@@ -12,7 +12,13 @@ export default defineConfig({
   },
   optimizeDeps: {
     exclude: ["frappe-ui"],
-    include: ["frappe-ui > feather-icons"]
+    include: [
+      "feather-icons",
+      "tippy.js",
+      "engine.io-client",
+      "socket.io-client",
+      "debug"
+    ]
   },
   test: {
     environment: "jsdom",
